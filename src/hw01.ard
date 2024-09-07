@@ -18,15 +18,30 @@
    second' = flip (second 0)
 -}
 
+\func second (_ y _ : Nat) : Nat => y
+
+\func apply (f : Nat -> Nat) (x : Nat) => f x
+
+\func compose (f : Nat -> Nat) (g : Nat -> Nat) (x : Nat) => f (g x)
+
+\func flip (f : Nat -> Nat -> Nat) (x y : Nat) => f y x
+
+\func second' => flip (second 0)
+
 -- 3. Расставьте приоритеты функций f1, f2, f3, f4, f5 и f6 так, чтобы функция test проходила тайпчекинг.
 
-\import lect01 \hiding (+,*)
+\import lect01 \hiding (+, *)
 
 \func f1 (x y : Nat) => x
+
 \func f2 : Nat => 0
-\func f3 (f : Nat -> Nat) (z : Nat) : Int => 0
+
+\func \infixl 6 f3 (f : Nat -> Nat) (z : Nat) : Int => 0
+
 \func f4 : Nat => 0
-\func f5 => f1
+
+\func \infixl 7 f5 => f1
+
 \func f6 => f4
 
 \func test => f1 f2 f3 f4 f5 f6
@@ -38,20 +53,52 @@
    if False _ e = e
 -}
 
+\func if' (c t f : Bool) : Bool \elim c
+  | true => t
+  | false => f
+
 -- 5. Определите || через if.
 
-\func \infixr 2 || (x y : Bool) : Bool => {?}
+\func \infixr 2 || (x y : Bool) : Bool => if' x true y
 
 -- 6. Определите возведение в степень и факториал для натуральных чисел.
 
-\open Nat \hiding (-,div) -- Здесь лежат + и *.
+\open Nat \hiding (-, div) -- Здесь лежат + и *.
 
-\func \infixr 8 ^ (x y : Nat) => {?}
+\func \infixr 8 ^ (x y : Nat): Nat \elim y
+  | 0 => 1
+  | suc y' => x ^ y' * x
 
-\func fac (x : Nat) => {?}
+\func fac (_ : Nat): Nat
+  | 0 => 1
+  | suc x' \as x => fac x' * x
 
 -- 7. Определите mod и gcd.
 
-\func mod (x y : Nat) => {?}
+\func mod (x y : Nat) => aux x x y
+  \where {
+    \func aux (fuel x y : Nat) : Nat \elim fuel
+      | 0 => 0
+      | suc fuel => if (x < y) x (aux fuel (x - y) y)
+  }
 
-\func gcd (x y : Nat) => {?}
+\func modTest1 : mod 5 10 = 5 => idp
+\func modTest2 : mod 0 3 = 0 => idp
+\func modTest3 : mod 3 0 = 0 => idp
+\func modTest4 : mod 11 2 = 1 => idp
+\func modTest5 : mod 20 3 = 2 => idp
+
+
+\func gcd (x y : Nat) => aux (x + y) x y
+  \where {
+    \func aux (fuel x y : Nat) : Nat \elim fuel, x, y
+      | 0, _, _ => 0
+      | _, 0, y => y
+      | _, x, 0 => x
+      | suc fuel, x, y => if (x < y) (aux fuel x (y - x)) (aux fuel (x - y) y)
+  }
+
+\func gcdTest1 : gcd 5 10 = 5 => idp
+\func gcdTest2 : gcd 0 3 = 3 => idp
+\func gcdTest3 : gcd 3 0 = 3 => idp
+\func gcdTest4 : gcd 4 6 = 2 => idp
