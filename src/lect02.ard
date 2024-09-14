@@ -1,6 +1,7 @@
 \import Algebra.Meta
 \import Data.Bool
 \import Data.Or
+\import Paths
 \import Function.Meta
 \import Meta
 
@@ -369,3 +370,13 @@
       | nil => idp
       | cons x xs => aux (cons x acc) xs
   }
+
+\func reverse' {A : \Type} (xs : List A) : List A
+  | nil => nil
+  | cons x xs => reverse' xs ++ cons x nil
+
+\func reverse'-++ {A : \Type} (xs ys : List A) : reverse' (xs ++ ys) = reverse' ys ++ reverse' xs => {?}
+
+\func reverse'-isInvolutive {A : \Type} (xs : List A) : reverse' (reverse' xs) = xs
+  | nil => idp
+  | cons x xs => reverse'-++ _ _ *> pmap (cons x) (reverse'-isInvolutive _)
