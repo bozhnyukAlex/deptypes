@@ -1,13 +1,21 @@
 \import Data.List
-\open Nat(+, *)
+\import Paths
+\import lect03
+\open Nat (+, *)
 
 -- 1. Чему равно fileTest (в нормальной форме)? Докажите это
 
+\func fileTestNormalForm : fileTest = (17, 8, 13, 55, 18, 21) => idp
+
 -- 2. Чему равно M5.t''' (в нормальной форме)? Докажите это
+
+\func M5_t'''NormalForm : M5.t''' = ((82, 42, 61, 82, 34, 42, 61, 29), 25, (42, 29)) => idp
 
 -- 3. Докажите ассоциативность ++
 
-\func ++-assoc {A : \Type} (xs ys zs : List A) : (xs ++ ys) ++ zs = xs ++ (ys ++ zs) => {?}
+\func ++-assoc {A : \Type} (xs ys zs : List A) : (xs ++ ys) ++ zs = xs ++ (ys ++ zs) \elim xs
+  | nil => idp
+  | x :: xs => pmap (x ::) (++-assoc xs ys zs)
 
 -- 4. Докажите, что reverse (reverse xs) = xs, где reverse определен через ++
 
@@ -16,29 +24,49 @@
   | :: x xs => reverse xs ++ x :: nil
 
 -- Это утверждение будет полезно для доказательства
-\func reverse++ {A : \Type} (xs ys : List A) : reverse (xs ++ ys) = reverse ys ++ reverse xs => {?}
 
-\func reverse-isInvolutive {A : \Type} (xs : List A) : reverse (reverse xs) = xs => {?}
+\func reverse++ {A : \Type} (xs ys : List A) : reverse (xs ++ ys) = reverse ys ++ reverse xs \elim xs
+  | nil => ++nil (reverse ys)
+  | x :: xs => trans (pmap (\lam l => l ++ x :: nil) (reverse++ xs ys)) (++-assoc (reverse ys) (reverse xs) (x :: nil))
+  \where
+    \func ++nil {A : \Type} (ys : List A) : ys = ys ++ nil \elim ys
+      | nil => idp
+      | y :: ys => pmap (y ::) (++nil ys)
+
+\func reverse-isInvolutive {A : \Type} (xs : List A) : reverse (reverse xs) = xs \elim xs
+  | nil => idp
+  | x :: xs => trans (reverse++ (reverse xs) (x :: nil)) (pmap (:: x) (reverse-isInvolutive xs))
 
 -- 5. Докажите дистрибутивность умножения над сложением для натуральных чисел
 
-\func rdistr (n m k : Nat) : (m + k) * n = m * n + k * n => {?}
+\func rdistr (n m k : Nat) : (m + k) * n = m * n + k * n \elim n
+  | 0 => idp
+  | suc n' => (m + k) * n' + (m + k) ==< pmap (\lam x => x + (m + k)) (rdistr n' m k) >==
+  m * n' + k * n' + (m + k) ==< +-assoc (m * n') (k * n') (m + k) >==
+  m * n' + (k * n' + (m + k)) ==< pmap (\lam x => m * n' + x) (symmetric (+-assoc (k * n') m k)) >==
+  m * n' + (k * n' + m + k) ==< pmap (\lam x => m * n' + (x + k)) (+-comm (k * n') m) >==
+  m * n' + (m + k * n' + k) ==< pmap (\lam x => m * n' + x) (+-assoc m (k * n') k) >==
+  m * n' + (m + (k * n' + k)) ==< symmetric (+-assoc (m * n') m (k * n' + k))
+  \where
+    \func symmetric {A : \Type} {a a' : A} (p : a = a') : a' = a => transport (\lam x => x = a) p idp
 
-\func ldistr (n m k : Nat) : n * (m + k) = n * m + n * k => {?}
+\func ldistr (n m k : Nat) : n * (m + k) = n * m + n * k \elim k
+  | 0 => idp
+  | suc k' => trans (pmap (\lam v => v + n) (ldistr n m k')) (+-assoc (n * m) (n * k') n)
 
 -- 6. Определите конгруэнтность для функций двух аргументов через transport
 --    Можно использовать любые функции, определенные через transport
 
 \func pmap2 {A B C : \Type} (f : A -> B -> C) {a a' : A} (p : a = a') {b b' : B} (q : b = b')
-  : f a b = f a' b' => {?}
+  : f a b = f a' b' => transport (\lam x => f a b = f a' x) q (pmap (\lam y => f y b) p)
 
 -- 7. Докажите, что transport выражается через pmap и repl и наоборот
 
 -- repl говорит, что если у нас есть два равных типа, то у нас есть функция из одного во второй
 -- Определите repl через transport
 
-\func repl {A B : \Type} (p : A = B) (a : A) : B => {?}
+\func repl {A B : \Type} (p : A = B) (a : A) : B => transport (\lam x => x) p a
 
 -- Определите transport через repl и pmap
 
-\func transport' {A : \Type} (B : A -> \Type) {a a' : A} (p : a = a') (b : B a) : B a' => {?}
+\func transport' {A : \Type} (B : A -> \Type) {a a' : A} (p : a = a') (b : B a) : B a' => repl (pmap B p) b
