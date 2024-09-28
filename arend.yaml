@@ -1,5 +1,5 @@
-langVersion: 1.9
+langVersion: ""
 sourcesDir: src
 binariesDir: bin
-version: 1.9
+version: ""
 dependencies: [arend-lib]
