@@ -4,7 +4,6 @@
 \import Data.Or
 \import Function.Meta
 \import Logic
-\import Meta
 \import Order.LinearOrder
 \import Order.StrictOrder
 \import Paths
@@ -356,6 +355,6 @@ Inductive Vec : Set -> Nat -> Set where
   \where {
     \func transport_cons {A : \Type} {x : A} {n m : Nat} (p : n = m) (xs : Vec A n)
       : transport (Vec A) (pmap suc p) (cons x xs) = cons x (transport (Vec A) p xs)
-    \elim p
-      | idp => idp
+    -- => J (\lam k q => transport (Vec A) (pmap suc q) (cons x xs) = {Vec A (suc k)} cons x (transport (Vec A) q xs)) idp p
+    \elim p | idp => idp
   }
