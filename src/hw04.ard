@@ -1,4 +1,6 @@
 \import Data.Bool
+\import Data.List (List, length)
+\import lect02 (T)
 \import lect04
 
 -- 1. Напишите функцию lookup, которая принимает List A и натуральное число и возвращает элемент по заданому индексу
@@ -12,31 +14,70 @@
   | suc x, 0 => false
   | suc x, suc y => x < y
 
-\func lookup => {?}
+\func lookup {A : \Type} (xs : List A) (n : Nat) (proof : T (n < length xs)) : A
+  | List.nil, 0, ()
+  | List.:: x xs, 0, proof => x
+  | List.:: x xs, suc n, proof => lookup xs n proof
 
 -- 2. Реализуйте аналоги функции replicate для vec и Vec
 --    (эта функция создает список заданной длины, состоящий из повторений данного элемента)
 
+\func replicate {A : \Type} (x : A) (n : Nat) : vec A n \elim n
+  | 0 => ()
+  | suc n => (x, replicate x n)
+
+\func replicateVec {A : \Type} (x : A) (n : Nat) : Vec A n \elim n
+  | 0 => Vec.nil
+  | suc n => Vec.cons x (replicateVec x n)
+
 -- 3. Реализуйте аналоги функции map для vec и Vec
+
+\func map {A B : \Type} {n : Nat} (f : A -> B) (xs : vec A n) : vec B n \elim n, xs
+  | 0, () => ()
+  | suc n, (a, xs) => (f a, map f xs)
+
+\func mapVec {A B : \Type} {n : Nat} (f : A -> B) (xs : Vec A n) : Vec B n \elim n, xs
+  | 0, Vec.nil => Vec.nil
+  | suc n, Vec.cons a xs => Vec.cons (f a) (mapVec f xs)
 
 -- 4. Реализуйте аналоги функции zipWith для vec и Vec
 --    Функция должна принимать вектора одинаковой длины
+
+\func zipWith {A B : \Type} {n : Nat} (xs : vec A n) (ys : vec B n) : vec (\Sigma A B) n \elim n, xs, ys
+  | 0, (), () => ()
+  | suc n, (x, xs), (y, ys) => ((x, y), zipWith xs ys)
+
+\func zipWithVec {A B : \Type} {n : Nat} (xs : Vec A n) (ys : Vec B n) : Vec (\Sigma A B) n \elim n, xs, ys
+  | 0, Vec.nil, Vec.nil => Vec.nil
+  | suc n, Vec.cons x xs, Vec.cons y ys => Vec.cons (x, y) (zipWithVec xs ys)
 
 -- 5. Определите тип CTree A n полных бинарных деревьев высоты ровно n,
 --    которые хранят элементы только во внутренних узлах, но не в листьях
 --    Высота листа равна 0
 
-\data CTree (A : \Type) (n : Nat)
+\data CTree (A : \Type) (n : Nat) \elim n
+  | 0 => CLeaf
+  | suc n => CNode (CTree A n) A (CTree A n)
 
 -- 6. Определите тип Tree A n бинарных деревьев высоты не больше n,
 --    которые хранят элементы только во внутренних узлах, но не в листьях
 --    Высота листа равна 0
 
-\data Tree (A : \Type) (n : Nat)
+\data Tree (A : \Type) (n : Nat) \elim n
+  | n => Leaf
+  | suc n => Node A (Tree A n) (Tree A n)
 
 -- Определите функцию, возвращающую высоту дерева
 
-\func height {A : \Type} (n : Nat) (t : Tree A n) : Fin (suc n) => {?}
+\func max (n : Nat) (_ _ : Fin n) : Fin n \with
+  | suc n', fzero, fzero => fzero
+  | suc n', fzero, fsuc y' => fsuc y'
+  | suc n', fsuc x', fzero => fsuc x'
+  | suc n', fsuc x', fsuc y' => fsuc (max n' x' y')
+
+\func height {A : \Type} (n : Nat) (t : Tree A n) : Fin (suc n) \elim n, t
+  | n, Leaf => fzero
+  | suc n', Node _ l' r' => fsuc (max (n' Nat.+ 1) (height n' l') (height n' r'))
 
 -- Optional task
 -- 7. Функции Fin n -> A соответствуют спискам элементов A длины n
@@ -68,7 +109,18 @@
 
 -- 9. Определите факториал через Nat-rec
 
+\func fac (x : Nat) : Nat => Nat-rec Nat 1 (\lam x acc => (x Nat.+ 1) Nat.* acc) x
+
+\func testFac1 : fac 1 = 1 => idp
+
+\func testFac2 : fac 2 = 2 => idp
+
+\func testFac3 : fac 3 = 6 => idp
+
 -- 10. Докажите ассоциативность сложения для натуральных чисел через Nat-elim
+
+\func +assocElim (n m k : Nat) : (n Nat.+ m) Nat.+ k = n Nat.+ (m Nat.+ k) =>
+  Nat-elim (\lam k => (n Nat.+ m) Nat.+ k = n Nat.+ (m Nat.+ k)) idp (\lam _ => pmap suc) k
 
 -- 11. Определите рекурсор и элиминатор для D
 
@@ -77,22 +129,62 @@
   | con2 D D
   | con3 (Nat -> D)
 
-{- Для проверки, что определения D-elim и D-rec верные, вы можете попробовать определить foo через D-rec
+\func DElim (P : D -> \Type)
+            (c1 : \Pi (n : Nat) -> P (con1 n))
+            (c2 : \Pi (x y : D) -> P x -> P y -> P (con2 x y))
+            (c3 : \Pi (f : Nat -> D) -> (\Pi (n : Nat) -> P (f n)) -> P (con3 f))
+            (x : D) : P x \elim x
+  | con1 n => c1 n
+  | con2 x y => c2 x y (DElim P c1 c2 c3 x) (DElim P c1 c2 c3 y)
+  | con3 f => c3 f (\lam n => DElim P c1 c2 c3 (f n))
+
+\func DRec (P : \Type)
+           (c1 : Nat -> P)
+           (c2 : D -> D -> P -> P -> P)
+           (c3 : (Nat -> D) -> (Nat -> P) -> P)
+           (x : D) : P \elim x
+  | con1 n => c1 n
+  | con2 x y => c2 x y (DRec P c1 c2 c3 x) (DRec P c1 c2 c3 y)
+  | con3 f => c3 f (\lam n => DRec P c1 c2 c3 (f n))
+
+-- Для проверки, что определения D-elim и D-rec верные, вы можете попробовать определить foo через D-rec
 \func foo (d : D) : Nat
   | con1 n => n
   | con2 d1 d2 => foo d1 Nat.+ foo d2
   | con3 g => foo (g (foo (g 100)))
--}
+
+\func DRecFoo  (d : D) : Nat => DRec Nat (\lam n => n) (\lam _ _ x y => x Nat.+ y) (\lam _ f => f (f 100)) d
+
+\func DRecFooTest : foo (con2 (con1 1) (con3 (\lam n => con1 (n Nat.+ 1))))
+  = DRecFoo (con2 (con1 1) (con3 (\lam n => con1 (n Nat.+ 1)))) => idp
 
 -- 12. Определите рекурсор и элиминатор для List
 
+\func ListElim {A : \Type}
+               (P : List A -> \Type)
+               (e : P List.nil)
+               (s : \Pi (x : A) (xs : List A) -> P xs -> P (List.:: x xs))
+               (l : List A) : P l \elim l
+  | List.nil => e
+  | List.:: x xs => s x xs (ListElim P e s xs)
+
+\func ListRec {A : \Type}
+              (P : \Type)
+              (e : P)
+              (s : A -> P -> P)
+              (l : List A) : P \elim l
+  | List.nil => e
+  | List.:: x xs => s x (ListRec P e s xs)
+
 -- 13. Докажите pmap при помощи паттерн матчинга с idp
 
-\func pmap {A B : \Type} (f : A -> B) {a a' : A} (p : a = a') : f a = f a' => {?}
+\func pmap {A B : \Type} (f : A -> B) {a a' : A} (p : a = a') : f a = f a'
+  | f, idp => idp
 
 -- 14. Докажите pmap2 при помощи паттерн матчинга с idp
 
-\func pmap2 {A B C : \Type} (f : A -> B -> C) {a a' : A} (p : a = a') {b b' : B} (q : b = b') : f a b = f a' b' => {?}
+\func pmap2 {A B C : \Type} (f : A -> B -> C) {a a' : A} (p : a = a') {b b' : B} (q : b = b') : f a b = f a' b'
+  | f, idp, idp => idp
 
 -- Optional task
 -- 15. У оператора J есть другая форма, которую мы будем называть Jalt
