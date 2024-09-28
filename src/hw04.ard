@@ -105,7 +105,9 @@
 
 -- Умножение матриц
 -- z ─ нейтральный элемент по сложению
-\func matMul {A : \Type} (z : A) (add mul : A -> A -> A) (n m k : Nat) (M : Mat A n m) (N : Mat A m k) : Mat A n k => {?}
+
+\func matMul {A : \Type} (z : A) (add mul : A -> A -> A) (n m k : Nat) (M : Mat A n m) (N : Mat A m k) : Mat A n k =>
+  {?}
 
 -- 9. Определите факториал через Nat-rec
 
@@ -148,6 +150,7 @@
   | con3 f => c3 f (\lam n => DRec P c1 c2 c3 (f n))
 
 -- Для проверки, что определения D-elim и D-rec верные, вы можете попробовать определить foo через D-rec
+
 \func foo (d : D) : Nat
   | con1 n => n
   | con2 d1 d2 => foo d1 Nat.+ foo d2
@@ -171,10 +174,10 @@
 \func ListRec {A : \Type}
               (P : \Type)
               (e : P)
-              (s : A -> P -> P)
+              (s : A -> List A -> P -> P)
               (l : List A) : P \elim l
   | List.nil => e
-  | List.:: x xs => s x (ListRec P e s xs)
+  | List.:: x xs => s x xs (ListRec P e s xs)
 
 -- 13. Докажите pmap при помощи паттерн матчинга с idp
 
