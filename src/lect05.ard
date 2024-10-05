@@ -1,0 +1,252 @@
+\import Data.Bool
+\import Logic
+\import Meta
+\import Paths
+\import Paths.Meta
+
+-- 1. \data Pair, проекции
+
+-- Мы можем определить тип пар натуральных чисел через \data
+\data NatPair | natPair Nat Nat
+
+-- Проекции можно определить через паттерн матчинг
+\func natFst (p : NatPair) : Nat
+  | natPair n n1 => n
+
+\func natSnd (p : NatPair) : Nat
+  | natPair n n1 => n1
+
+-- 2. Эта-эквивалентность для \Pi-типов, \Sigma-типов, \record
+
+-- Бета-эквивалентность
+-- (\lam x => b) a == b[x := a]
+-- (a, b).1 == a
+
+-- Если у типа ровно один конструктор, то для него можно определить эта-эквивалентность
+
+-- Например, для \Pi-типов она говорит, что (\lam x => f x) == f
+\func etaPi {A : \Type} (B : A -> \Type) (f : \Pi (x : A) -> B x) : f = (\lam x => f x)
+  => idp
+
+-- Для \Sigma-типов она говорит, что (p.1, p.2) == p
+\func etaSigma {A : \Type} (B : A -> \Type) (p : \Sigma (x : A) (B x)) : p = (p.1, p.2)
+  => idp
+
+-- Если бы эта-эквивалентности не было в языке,
+-- это равенство всё равно можно было бы доказать при помощи паттерн матчинга
+\func etaSigma' {A : \Type} (B : A -> \Type) (p : \Sigma (x : A) (B x))
+  : p = (p.1, p.2) \elim p
+  | (a, b) => idp
+
+-- Для типа пар определенного выше эта-эквивалентности нет,
+-- поэтому единственный способ доказать ее -- это использовать паттерн матчинг
+\func etaNatPair (p : NatPair) : p = natPair (natFst p) (natSnd p)
+  | natPair n n1 => idp
+
+-- \func pair-lem (x : NatPair) : x = natPair (natFst x) (natSnd x) => idp
+
+\data TUnit | tunit
+
+\func sigma-lem (x : \Sigma) : x = () => idp
+-- \func TUnit-lem (x : TUnit) : x = tunit => idp
+
+\func sigma-lem' (x y : \Sigma) : x = y => idp
+-- \func TUnit-lem' (x y : TUnit) : x = y => idp
+
+-- 3. Определение "="
+
+-- В Prelude определен тип I с двумя конструкторами left и right,
+-- но в отличии от обычных \data эти два конструктора равны
+-- Это означает, что для I нельзя использовать паттерн матчинг, так как иначе было бы легко вывести противоречие
+-- Так как left и right равны, то некоторые a : A и a' : A равны тогда и только тогда,
+-- когда существует функция f : I -> A, такая что f left == a и f right == a', где "==" -- это вычислительное равенство
+-- Тип a = {A} a' определен как тип функций I -> A, удовлетворяющих этому свойству
+
+\data \infix 1 =' {A : \Type} (a : A) (a' : A)
+  | path' (f : I -> A) -- (f left == a) (f right == a')
+
+-- Функция "@", определенная в прелюдии, -- это просто обратная функция к конструктору path
+-- Читается как "at" и позволяет получить левую или правую сторону равенства
+-- path (f : I -> A) : f left = f right
+-- @ (p : a = a') (i : I) : A
+
+\func \infixl 9 @'' {A : \Type} {a : A} {a' : A} (p : a = a') (i : I) : A \elim p
+  | path f => f i
+
+\func \infixl 9 @' {A : \Type} {a : A} {a' : A} (p : a = a') : I -> A \elim p
+  | path f => f
+
+\func test {A : \Type} (f : I -> A) : f left = f right
+  => path f
+
+-- Доказательство a = a тривиально
+\func idp' {A : \Type} {a : A} : a = a
+  => path (\lam _ => a)
+
+-- path (@ p) == p -- эта-эквивалентность
+\func path_@ {A : \Type} {a a' : A} {p : a = a'} : path (p @) = p
+  => idp
+
+-- @ (path f) == f -- бета-эквивалентность
+\func @_path {A : \Type} {f : I -> A} : (path f @) = f
+  => idp
+
+\func path_@' {A : \Type} {a a' : A} {p : a = a'} : path (\lam i => p @ i) = p
+  => idp
+
+-- Если f : A -> B и g : I -> A, то их композиция дает нам pmap
+-- p left  = a
+-- p right = a'
+-- g left  = f a
+-- g right = f a'
+-- g i = f (p i)
+-- Действительно, g доказывает, что g left = g right, а композиция f и g доказывает, что f (g left) = f (g right)
+\func pmap'' {A B : \Type} (f : A -> B) {a a' : A} (p : a = a') : f a = f a'
+  => path (\lam i => f (p @ i))
+
+-- Конструктор path и оператор "@" можно опускать
+\func pmap' {A B : \Type} (f : A -> B) {a a' : A} (p : a = a') : f a = f a'
+  => \lam i => f (p i)
+
+-- pmap можно определять по разному, но если использовать определение,
+-- данное выше, то он будет обладать хорошими вычислительными свойствами
+-- Например, pmap id = id и pmap (f . g) = pmap f . pmap g, где (.) -- это композиция
+-- Если определить pmap по другому, то эти равенства тоже будут верны,
+-- но не вычислительно, то есть их нельзя будет доказать просто по рефлексивности
+\func pmap-idp {A : \Type} {a a' : A} (p : a = a') : pmap' (\lam x => x) p = p
+  => idp
+
+-- 4. Функциональная экстенсиональность
+
+-- f, g : A -> B
+-- f = g <=> \/x : A. f(x) = g(x)
+
+-- Функциональная экстенсиональность говорит, что если две функции f и g равны на всех аргументах, то они равны
+-- Ее легко доказать, используя наше определение равенства
+\func funExt {A : \Type} {B : A -> \Type} {f g : \Pi (a : A) -> B a}
+             (p : \Pi (a : A) -> f a = g a) : f = g
+           -- p : A -> I -> B              -- I -> A -> B
+  => \lam i a => p a i
+
+-- Это верно из-за эта-эквивалентности
+-- (\lam a => p a left) = (\lam a => f a) = f
+-- (\lam a => p a right) = (\lam a => g a) = g
+
+\func funExt' {A : \Type} {B : A -> \Type} {f g : \Pi (a : A) -> B a}
+              (p : \Pi (a : A) -> f a = g a) : f = g
+  => path (\lam i a => p a @ i)
+
+-- В Arend функциональная экстенсиональность верна вычислительно
+\func unext {A : \Type} {B : A -> \Type} {f g : \Pi (a : A) -> B a} (p : f = g) : \Pi (a : A) -> f a = g a
+  => \lam a i => p i a
+
+\func funExt-unext {A : \Type} (B : A -> \Type) {f g : \Pi (a : A) -> B a} (p : f = g) : funExt (unext p) = p
+  => idp
+
+\func unext-funExt {A : \Type} (B : A -> \Type) {f g : \Pi (a : A) -> B a} (p : \Pi (a : A) -> f a = g a)
+  : unext (funExt p) = p
+  => idp
+
+-- В большинстве других языков с зависимыми типами ее доказать нельзя
+-- Ее можно добавить просто как аксиому, то есть функцию без реализации, но аксиомы обычно не любят добавлять,
+-- так как это портит вычислительные свойства языка
+
+-- Например, если мы добавим аксиому исключенного третьего lem, то легко написать константу foo : Nat,
+-- которая не будет вычисляться ни в какое конкретное число
+-- \func lem : \Pi (X : \Type) -> Either X (X -> Empty)
+-- \func foo : Nat => \case lem Nat \with { | left _ => 0 | right _ => 1 }
+
+-- Для доказательства по экстенсиональности существует мета ext (и exts)
+\func funExt'' {A : \Type} {B : A -> \Type} {f g : \Pi (a : A) -> B a}
+               (p : \Pi (a : A) -> f a = g a) : f = g
+  => ext p
+
+-- Sigma-экстенсиональность для независимых кортежей простая, но для зависимых бывает полезна
+\func sigmaExt {A : \Type} {B : \Type} {f g : \Sigma A B} (p : f.1 = g.1) (q : f.2 = g.2) : f = g
+  => ext (p, q)
+
+\func sigmaExt' {A : \Type} {B : A -> \Type} {f g : \Sigma (a : A) (B a)}
+                (p : f.1 = g.1) (q : transport B p f.2 = g.2) : f = g
+  => ext (p, q)
+
+-- 5. Элиминатор для I
+
+-- О функции coe, определенной в прелюдии, можно думать как об элиминаторе для I
+-- Она говорит, что для определения функции над I достаточно определить её для left
+-- Для сравнения, элиминатор для Bool говорит,
+-- что для определения функции над Bool достаточно определить ее для true и false
+
+{-
+\func coe (P : I -> \Type)
+          (a : P left)
+          (i : I)
+  : P i \elim i
+  | left => a
+-}
+
+-- Используя coe, легко доказать, что любой i : I равен left
+\func left=i (i : I) : left = i
+  --  | left => idp
+  => coe (\lam j => left = j) idp i
+
+-- 6. coe и transport
+
+-- Функция coe тесно связана с transport
+-- Мы можем определить transport через coe
+
+\func coe0 (A : I -> \Type) (a : A left) : A right => coe A a right
+
+\func transport'' {A : \Type} (B : A -> \Type) {a a' : A} (p : a = a') (b : B a) : B a'
+  => coe0 (\lam i => B (p i)) b
+
+-- Пусть B' == \lam i => B (p i)
+-- Тогда
+-- B' : I -> \Type
+-- B' left == B a
+-- B' right == B a'
+--
+-- \lam x => coe B' x right : B' left -> B' right
+
+-- В ДЗ нужно будет показать, что через transport определяется частный случай coe
+
+-- s i : a = p i
+-- s left = idp {A} {a}
+-- s right = p
+
+-- s i : I -> A
+-- s left  i = a
+-- s right i = p i
+
+\func J'' {A : \Type} {a : A} (B : \Pi (a' : A) -> a = a' -> \Type) (b : B a idp)
+          {a' : A} (p : a = a') : B a' p
+  => coe0 (\lam i => B (p i) (\lam j => p (I.squeeze i j))) b
+
+-- Можно доказать, что transport и J, применённые к idp, возвращают свой аргумент
+\func J''idp {A : \Type} {a : A} (B : \Pi (a' : A) -> a = a' -> \Type) (b : B a idp) : J'' B b idp = b
+  => idp
+
+-- 7. Неравенство конструкторов
+
+-- В Arend встроено правило, что равенство двух разных конструкторов не населено
+\func true/=false'' (p : true = false) : Empty
+
+-- Но это можно доказать и явно, если у нас есть любой тип B из хотя бы двух разных значений
+\func true/=false' (B : \Type) (b : B) (b' : B) (q : b = b' -> Empty)
+                   (p : true = false) : Empty
+  => q (pmap (if __ b b') p)
+
+-- И у нас есть такой тип -- это тип типов
+\func TB (b : Bool) : \Type
+  | true => \Sigma
+  | false => Empty
+
+\func true/=false (p : true = false) : Empty
+  => transport TB p ()
+
+-- Мы не можем доказать, что left не равно right,
+-- так как мы не можем определить такую функцию для I ни рекурсивно, ни через \data
+{-
+\func TI (b : I)
+  | left => \Sigma
+  | right => Empty
+-}
