@@ -1,54 +1,68 @@
 \import Data.Bool
+\import Function
+\import Function.Meta
 \import Logic
+\import Meta
+\import Paths
+\import Paths.Meta
 
 -- 1. Определите функцию swap и докажите, что swap (swap p) = p
 
-\func swap {A B : \Type} (p : \Sigma A B) : \Sigma B A => {?}
+\func swap {A B : \Type} (p : \Sigma A B) : \Sigma B A
+  | (a, b) => (b, a)
 
-\func swap-involutive {A B : \Type} (p : \Sigma A B) : swap (swap p) = p => {?}
+\func swap-involutive {A B : \Type} (p : \Sigma A B) : swap (swap p) = p => idp
 
 -- 2. Докажите, что (\lam x => not (not x)) = (\lam x => x)
 
-\func notNotId : (\lam x => not (not x)) = (\lam x => x) => {?}
+\func notNotId : (\lam x => not (not x)) = (\lam x => x) => ext $ \lam x => cases x idp
 
 -- 3. Докажите, что fac не равен suc
 
-\open Nat(*)
+\open Nat (*)
 
 \func fac (n : Nat) : Nat
   | 0 => 1
   | suc n => suc n * fac n
 
-\func fac/=suc (p : fac = suc) : Empty => {?}
+\func fac/=suc (p : fac = suc) : Empty => transport' h (pmap (\lam g => g 1) p) ()
+  \where {
+    \func h (_ : Nat) : \Type
+      | 0 => \Sigma
+      | suc 0 => \Sigma
+      | suc n => Empty
+  }
 
 -- 4. Докажите, что left = right, не используя transport, coe и паттерн матчинг с idp
 
-\func left=right : left = right => {?}
+\func left=right : left = right => id
 
 -- 5. Докажите, что если a = a' и b = b', то (a, b) = (a', b'), не используя transport, coe и паттерн матчинг с idp
 --    (меты тоже нельзя)
 
-\func pairEq {A B : \Type} {a a' : A} {b b' : B} (p : a = a') (q : b = b') : (a, b) = (a', b') => {?}
+\func pairEq {A B : \Type} {a a' : A} {b b' : B} (p : a = a') (q : b = b') : (a, b) = (a', b') => \lam i => (p i, q i)
 
 -- 6. Докажите, что если p = p', то p.1 = p'.1, не используя transport, coe и паттерн матчинг с idp
 
-\func projEq {A : \Type} (B : A -> \Type) {p p' : \Sigma (x : A) (B x)} (t : p = p') : p.1 = p'.1 => {?}
+\func projEq {A : \Type} (B : A -> \Type) {p p' : \Sigma (x : A) (B x)} (t : p = p') : p.1 = p'.1 => \lam i => (t i).1
 
 -- 7. Докажите pmap2, не используя transport, coe и паттерн матчинг с idp
 
-\func pmap2' {A B C : \Type} (f : A -> B -> C) {a a' : A} (p : a = a') {b b' : B} (q : b = b') : f a b = f a' b' => {?}
+\func pmap2' {A B C : \Type} (f : A -> B -> C) {a a' : A} (p : a = a') {b b' : B} (q : b = b') : f a b = f a' b' =>
+  \lam i => f (p i) (q i)
 
 -- 8. Мы видели как определить transport через coe. Определите частный случай coe через transport
 
-\func coe0 (A : I -> \Type) (a : A left) : A right => {?}
+\func coe0 (A : I -> \Type) (a : A left) : A right => transport A id a
 
 -- 9. Докажите, что transport' от константной функции возвращает свой последний аргумент
 
 \func transport' {A : \Type} (B : A -> \Type) {a a' : A} (p : a = a') (b : B a) : B a' \elim p
   | idp => b
 
-\func transport'_const {A B : \Type} {a a' : A} (p : a = a') (b : B) : transport' (\lam _ => B) p b = b => {?}
+\func transport'_const {A B : \Type} {a a' : A} (p : a = a') (b : B) : transport' (\lam _ => B) p b = b \elim p
+  | idp => idp
 
 -- 10. Определите функцию B right -> B left
 
-\func Itr' {B : I -> \Type} (b : B right) : B left => {?}
+\func Itr' {B : I -> \Type} (b : B right) : B left => transport B (inv id) b
