@@ -1,43 +1,116 @@
+\import Data.Maybe
 \import Logic
+\import Logic.Meta
+\import Meta
+\import Paths (*>, inv)
+\import Paths.Meta
+\import hw04 (pmap)
 \import lect06
+\import hw01 (gcd)
+\import Function.Meta
 
 -- 1. Определите функцию swap несколькими способами
 
 -- При помощи \cowith и доступа к полям
-\func swap {A B : \Type} (p : Pair A B) : Pair B A => {?}
+
+\func swap {A B : \Type} (p : Pair A B) : Pair B A \cowith
+  | fst_ => p.snd_
+  | snd_ => p.fst_
 
 -- При помощи \new и паттерн матчинга
-\func swap' {A B : \Type} (p : Pair A B) : Pair B A => {?}
+
+\func swap' {A B : \Type} (p : Pair A B) : Pair B A \elim p
+  | (a, b) => \new Pair B A b a
 
 -- При помощи \new и доступа к полям
-\func swap'' {A B : \Type} (p : Pair A B) : Pair B A => {?}
+
+\func swap'' {A B : \Type} (p : Pair A B) : Pair B A => \new Pair B A {
+  | fst_ => p.snd_
+  | snd_ => p.fst_
+}
 
 -- 2. Докажите, что swap (swap p) = p
 
-\func swap-involutive {A B : \Type} (p : Pair A B) : swap (swap p) = p => {?}
+\func swap-involutive {A B : \Type} (p : Pair A B) : swap (swap p) = p => idp
 
 -- 3. Докажите, что тип PosNat 0 пустой, а тип PosNat 1 нет
 
-\func zero-isNotPos (p : PosNat 0) : Empty => {?}
+\func zero-isNotPos (p : PosNat 0) : Empty => \case PosNat.p {p}
 
-\func one-isPos : PosNat 1 => {?}
+\func one-isPos : PosNat 1 \cowith
+  | p => ()
 
 -- 4. Определите \record, состоящий из пар взаимно простых натуральных чисел
 --    Определите тип, состоящий из натуральных чисел, взаимно простых с 60
 
+\record Coprimes (n m : Nat) {
+  | coprime : gcd n m = 1
+}
+
+\func CoprimesWith60 : \Type => Coprimes 60
+
+
 -- 5. Закончите определение класса монад
 --    Этот класс должен содержать все монадные законы и реализовывать все поля из класса функторов
 
-\class Monad \extends Functor
+\class Monad \extends Functor {
   | return {A : \Type} : A -> F A
-  | \infixl 2 >>= {A B : \Type} : F A -> (A -> F B) -> F B
+  | \infixl 1 >>= {A B : \Type} : F A -> (A -> F B) -> F B
+
+  | left-identity {A B : \Type} (a : A) (h : A -> F B) : (return a >>= h) = h a
+  | right-identity {B : \Type} (m : F B) : (m >>= return) = m
+  | associativity {A B C : \Type} (m : F A) (g : A -> F B) (h : B -> F C) : ((m >>= g) >>= h) = (m >>= (\lam x => g x >>= h))
+
+  | fmap {A B : \Type} (func : A -> B) (f : F A) => f >>= \lam x => return $ func x
+  | fmap-id m => unfold $ right-identity m
+  | fmap-comp _ _ m => pmap (m >>=) (ext \lam _ => inv (left-identity _ _)) *> inv (associativity _ _ _)
+}
 
 -- 6. Определите \instance Monad для Maybe
+
+\instance MaybeMonad : Monad Maybe
+  | return => just
+  | >>= m f => \case m \with {
+    | nothing => nothing
+    | just x => f x
+  }
+  | left-identity _ _ => idp
+  | right-identity m => cases m idp
+  | associativity m _ _ => cases m idp
 
 -- 7. Определите \instance Monad для State и State'
 
 \record State (S A : \Type)
   | state : S -> \Sigma S A
 
+\instance StateMonad (S : \Type) : Monad (State S)
+  | return => \lam a => \new State {
+    | state => \lam s => (s, a)
+  }
+  | >>= m f => constructor \lam s0 =>
+      \let (s1, x) => state {m} s0 \in state {f x} s1
+  | left-identity _ _ => idp
+  | right-identity _ => idp
+  | associativity _ _ _ => idp
+
 \data State' (S A : \Type)
   | state' (S -> \Sigma S A)
+
+\instance State'Monad (S : \Type) : Monad (State' S)
+  | return => \lam a => state' \lam s => (s, a)
+  | >>= m f => state' \lam s0 => \let (s1, x) => unwrap-state m s0 \in
+    unwrap-state (f x) s1
+  | left-identity a f => cases (f a) \with {
+    | state' x => pmap state' (ext \lam _ => idp)
+  }
+  | right-identity m => cases m \with {
+    | state' x => pmap state' (ext \lam _ => idp)
+  }
+  | associativity _ _ _ => pmap state' (ext \lam _ => idp)
+
+  \where {
+    \func unwrap-state {S A : \Type} (s : State' S A) : S -> \Sigma S A => \case s \with {
+      | state' f => f
+    }
+  }
+
