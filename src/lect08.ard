@@ -1,0 +1,348 @@
+\import Algebra.Meta
+\import Data.Bool
+\import Data.List
+\import Data.Or
+\import Function.Meta
+\import Logic.Meta
+\import Meta
+\import Order.LinearOrder
+\import Order.StrictOrder
+\import Paths
+\import Paths.Meta
+\open LinearOrder
+
+-- 1. Полнота спецификации
+
+-- Спецификация для некоторого значения a типа A -- это просто предикат вида P : A -> \Type
+-- То есть спецификация -- это просто свойство элемента, которое мы хотим про него доказать
+
+-- Спецификация корректна, если верно P a
+-- Спецификация полна, если P x влечет x = a для любого x : A
+
+-- Например, пусть у нас есть функция, вычисляющая факториал fac : Nat -> Nat
+-- P1 -- корретная спецификация для fac, но не полная
+-- \func P1 (f : Nat -> Nat) => f 3 = 6
+-- P2 -- полная, но не корректная
+-- \func P2 (f : Nat -> Nat) => Empty
+-- P3 -- полная и корректная спецификация для fac
+-- \func P3 (f : Nat -> Nat) => \Sigma (f 0 = 1) (\Pi (n : Nat) -> f (suc n) = suc n * f n)
+
+-- Полная и корректная спецификация для функции сортировки:
+-- \func P (f : List A -> List A) => \Pi (xs : List A) -> \Sigma (isSorted (f xs)) (isPerm (f xs) xs)
+-- где isSorted xs верно тогда и только тогда, когда список xs отсортирован,
+-- а isPerm xs ys верно тогда и только список xs является перестановкой списка ys
+
+-- Разумеется, мы хотим, чтобы спецификация была, по крайней мере, корректной
+-- Мы можем не требовать полноты, если полную спецификацию слишком сложно проверить
+-- и нам достаточно истинности частичной спецификации
+-- Тем не менее полезно понимать когда спецификация является полной
+
+-- Есть простое необходимое (и достаточное для корректных спецификаций) условие полноты,
+-- которое не зависит от элемента, для которого задается спецификация:
+-- \Pi (x y : A) -> P x -> P y -> x = y
+-- То есть должно существовать не более одного элемента, на котором предикат верен
+
+-- 2. Корректность сортировки
+
+\data Sorted {A : LinearOrder} (xs : List A) \elim xs
+  | nil => sorted-nil
+  | x :: xs => sorted-cons (x <= headDef x xs) (Sorted xs)
+\where {
+
+  \lemma first-less {A : Dec} {x1 x2 : A} {xs1 xs2 : List A} (p : Sorted (x1 :: xs1 ++ x2 :: xs2)) : x1 <= x2 \elim xs1, p
+    | nil, sorted-cons x1<=x2 p => x1<=x2
+    | x1' :: xs1, sorted-cons x1<=x1' p => Order.LinearOrder.LinearOrder.<=-transitive x1<=x1' (first-less p)
+
+  \lemma prefix {A : Dec} {xs1 xs2 : List A} (p : Sorted (xs1 ++ xs2)) : Sorted xs1 \elim xs1, p
+    | nil, p => sorted-nil
+    | x :: xs1, sorted-cons x<= p =>
+      \have q => prefix p
+      \in \case \elim xs1, \elim x<=, \elim q \with {
+        | nil, _, sorted-nil => sorted-cons Order.LinearOrder.LinearOrder.<=-refl sorted-nil
+        | x1 :: xs1, x<=, q => sorted-cons x<= q
+      }
+
+  \lemma suffix {A : Dec} {xs1 xs2 : List A} (p : Sorted (xs1 ++ xs2)) : Sorted xs2 \elim xs1, p
+    | nil, p => p
+    | x :: xs1, sorted-cons _ p => suffix p
+}
+
+-- perm-cons (perm-cons (... perm-nil)) -- равные списки
+-- perm-cons (perm-cons (... perm-swap)) -- один обмен соседних элементов
+\data Perm {A : \Type} (xs ys : List A) \elim xs, ys
+  | nil, nil => perm-nil
+  | x :: xs, y :: ys => perm-cons (x = y) (Perm xs ys)
+  | x :: (x' :: xs), y :: (y' :: ys) => perm-swap (x = y') (x' = y) (xs = ys)
+  | xs, ys => perm-trans {zs : List A} (Perm xs zs) (Perm zs ys)
+\where {
+
+  \func refl {A : \Type} {xs : List A} : Perm xs xs \elim xs
+    | nil => perm-nil
+    | x :: xs => perm-cons idp refl
+}
+
+\module Insertion \where {
+
+  \func sort {A : Dec} (xs : List A) : List A
+    | nil => nil
+    | x :: xs => insert x (sort xs)
+  \where {
+    \func insert {A : Dec} (a : A) (xs : List A) : List A \elim xs
+      | nil => a :: nil
+      | x :: xs => \case dec<_<= x a \with {
+        | inl x<a => x :: insert a xs
+        | inr a<=x => a :: x :: xs
+      }
+
+    \func insert-comm {A : Dec} (a b : A) {xs : List A} (p : Sorted xs)
+      : insert a (insert b xs) = insert b (insert a xs)
+      => \case trichotomy a b \with {
+        | less a<b => aux p a<b
+        | equals a=b => rewrite a=b idp
+        | greater a>b => inv (aux p a>b)
+      }
+    \where {
+
+      \func aux {A : Dec} {a b : A} {xs : List A} (p : Sorted xs) (a<b : a < b)
+        : insert a (insert b xs) = insert b (insert a xs) \elim xs, p
+        | nil, p => rewrite (dec<_reduce a<b, dec<=_reduce (<_<= a<b)) idp
+        | a1 :: xs1, sorted-cons a1<= p => repeat {4} mcases (idp <|> contradiction <|> pmap (a1 ::) (aux p a<b))
+      }
+  }
+
+  \open sort
+
+  \func sort-perm {A : Dec} (xs : List A) : Perm xs (sort xs) \elim xs
+    | nil => perm-nil
+    | x :: xs => perm-trans (perm-cons idp (sort-perm xs)) (insert-perm x (sort xs))
+  \where {
+
+    \func insert-perm {A : Dec} (a : A) (xs : List A) : Perm (a :: xs) (insert a xs) \elim xs
+      | nil => perm-cons idp perm-nil
+      | x :: xs => mcases \with {
+        | inl _ => perm-trans (perm-swap idp idp idp) (perm-cons idp (insert-perm a xs))
+        | inr _ => perm-cons idp (perm-cons idp Perm.refl)
+      }
+  }
+
+  \func sort-sorted {A : Dec} (xs : List A) : Sorted (sort xs) \elim xs
+    | nil => sorted-nil
+    | x :: xs => insert-sorted x (sort-sorted xs)
+  \where {
+
+    \lemma insert-sorted {A : Dec} (a : A) {xs : List A} (p : Sorted xs) : Sorted (insert a xs) \elim xs
+      | nil => sorted-cons Order.LinearOrder.LinearOrder.<=-refl sorted-nil
+      | x :: xs => mcases \with {
+        | inl x<a => \case \elim p \with {
+          | sorted-cons x<=x' p =>
+            \have q => insert-sorted a p
+            \in \case \elim xs, \elim x<=x', \elim q \with {
+              | nil, _, sorted-cons a<=a q => sorted-cons (<_<= x<a) (sorted-cons a<=a sorted-nil)
+              | x' :: xs, x<=x', q => sorted-cons (mcases (x<=x' <|> <_<= x<a)) q
+            }
+        }
+        | inr a<=x => sorted-cons a<=x p
+      }
+  }
+}
+
+-- 3. Полнота спецификации для sort
+
+-- Perm (sort' l) l
+-- Perm (sort l) l
+-- Sorted (sort' l)
+-- Sorted (sort l)
+-- Мы хотим показать, что эти 4 условия влекут sort l = sort' l
+
+-- Достаточно показать следующую импликацию:
+-- Sorted l -> Sorted l' -> Perm l l' -> l = l'
+
+-- Мы можем показать, что Perm l l' <-> sort l = sort l'
+
+-- 4. Tree sort
+
+\module TreeSort \where {
+
+  \data Tree (A : \Type) | leaf | branch (Tree A) A (Tree A)
+
+  \func sort {A : Dec} (l : List A) => toList (buildTree l)
+  \where {
+    \func buildTree {A : Dec} (l : List A) : Tree A \elim l
+      | nil => leaf
+      | a :: l => insert a (buildTree l)
+  }
+
+  \func toList {A : \Type} (t : Tree A) : List A \elim t
+    | leaf => nil
+    | branch t1 a t2 => toList t1 ++ a :: toList t2
+
+  \func insert {A : Dec} (a : A) (t : Tree A) : Tree A \elim t
+    | leaf => branch leaf a leaf
+    | branch l1 a1 l2 => \case dec<_<= a1 a \with {
+      | inl a<x => branch l1 a1 (insert a l2)
+      | inr x<=a => branch (insert a l1) a1 l2
+    }
+
+  \func sort=insert {A : Dec} (xs : List A) : sort xs = Insertion.sort xs => buildTree=insert xs
+
+  \func buildTree=insert {A : Dec} (xs : List A) : toList (sort.buildTree xs) = Insertion.sort xs \elim xs
+    | nil => idp
+    | x :: xs =>
+      \have ih => buildTree=insert xs
+      \in insert=insert' x _ (rewrite ih (Insertion.sort-sorted xs)) *> pmap (Insertion.sort.insert x) ih
+
+  \func insert=insert' {A : Dec} (x : A) (xs : Tree A) (p : Sorted (toList xs))
+    : toList (insert x xs) = insert' x (toList xs) \elim xs
+    | leaf => idp
+    | branch xs1 a xs2 => mcases \with {
+      | inl a<x =>
+        \have q => Sorted.suffix {_} {toList xs1 ++ a :: nil} {toList xs2} (rewrite ++-assoc p)
+        \in pmap (toList xs1 ++ a :: __) (insert=insert' x xs2 q) *> insert-in-suffix _ _ p a<x
+      | inr x<=a => pmap (__ ++ a :: toList xs2) (insert=insert' x xs1 (Sorted.prefix p)) *> insert-in-prefix _ _ x<=a
+    }
+    \where {
+    \open Insertion.sort(insert \as insert')
+
+    \func insert-in-prefix {A : Dec} {a x : A} (xs1 xs2 : List A) (a<=x : a <= x)
+      : insert' a xs1 ++ x :: xs2 = insert' a (xs1 ++ x :: xs2) \elim xs1
+      | nil => rewrite (dec<=_reduce a<=x) idp
+      | x1 :: xs1 => mcases \with {
+        | inl _ => pmap (x1 ::) (insert-in-prefix _ _ a<=x)
+        | inr _ => idp
+      }
+
+      \func insert-in-suffix {A : Dec} {a x : A} (xs1 xs2 : List A) (p : Sorted (xs1 ++ x :: xs2)) (x<a : x < a)
+      : xs1 ++ x :: insert' a xs2 = insert' a (xs1 ++ x :: xs2) \elim xs1
+        | nil => rewrite (dec<_reduce x<a) idp
+        | x1 :: xs1 => mcases \with {
+          | inl _ => \case \elim p \with {
+            | sorted-cons _ p => pmap (x1 ::) (insert-in-suffix xs1 xs2 p x<a)
+          }
+          | inr a<=x =>
+            \have q => Sorted.first-less p
+            \in contradiction
+        }
+    }
+}
+
+-- 5. Red-black tree sort
+
+\module RedBlack \where {
+  \func sort {A : Dec} (l : List A) => toList (buildTree l)
+  \where {
+    \data Color | red | black
+
+    \data RBTree (A : \Type) | rbLeaf | rbBranch Color (RBTree A) A (RBTree A)
+
+    \func buildTree {A : Dec} (l : List A) : RBTree A \elim l
+      | nil => rbLeaf
+      | a :: l => repaint (insert a (buildTree l))
+
+    \func repaint {A : \Type} (t : RBTree A) : RBTree A
+      | rbBranch _ l a r => rbBranch black l a r
+      | leaf => leaf
+
+    \func insert {A : Dec} (a : A) (t : RBTree A) : RBTree A \elim t
+      | rbLeaf => rbBranch red rbLeaf a rbLeaf
+      | rbBranch c l1 a1 l2 => \case dec<_<= a1 a \with {
+        | inl a1<a => balanceRight c l1 a1 (insert a l2)
+        | inr a<=a1 => balanceLeft c (insert a l1) a1 l2
+      }
+
+    {-
+      -- f x true => not x
+      \func f (b1 b2 : Bool) : Bool
+        | true, _ => true
+        | x, true => not x
+        | false, false => false
+    -}
+
+    -- balanceLeft black (rbBranch red a x (rbBranch red b y c)) /=> rbBranch red (rbBranch black a x b) y (rbBranch black c v r)
+    \func balanceLeft {A : \Type} (c : Color) (\strict l : RBTree A) (v : A) (r : RBTree A) : RBTree A \elim c, l
+      | black, rbBranch red (rbBranch red a x b) y c => rbBranch red (rbBranch black a x b) y (rbBranch black c v r)
+      | black, rbBranch red a x (rbBranch red b y c) => rbBranch red (rbBranch black a x b) y (rbBranch black c v r)
+      | c, a => rbBranch c a v r
+
+    \func balanceRight {A : \Type} (c : Color) (l : RBTree A) (v : A) (\strict r : RBTree A) : RBTree A \elim c, r
+      | black, rbBranch red (rbBranch red b y c) z d => rbBranch red (rbBranch black l v b) y (rbBranch black c z d)
+      | black, rbBranch red b y (rbBranch red c z d) => rbBranch red (rbBranch black l v b) y (rbBranch black c z d)
+      | c, b => rbBranch c l v b
+  }
+
+  \open sort
+
+  \func toList {A : \Type} (t : RBTree A) : List A \elim t
+    | rbLeaf => nil
+    | rbBranch _ t1 a t2 => toList t1 ++ a :: toList t2
+
+  -- Это основное утверждение
+  \lemma sort=insert {A : Dec} (l : List A)
+    : sort l = Insertion.sort l \elim l
+    | nil => idp
+    | :: a l =>
+      rewrite (toList-repaint, toList-insert a (buildTree l) (rewrite sort=insert (Insertion.sort-sorted l))) $
+      pmap (Insertion.sort.insert a) (sort=insert l)
+
+  -- Для доказательства sort=insert нам понадобятся леммы toList-repaint и toList_insert
+
+  \lemma toList-repaint {A : \Set} (t : RBTree A) : toList (repaint t) = toList t \elim t
+    | rbLeaf => idp
+    | rbBranch c t1 a t2 => idp
+
+  \lemma toList-insert {A : Dec} (a : A) (t : RBTree A) (s : Sorted (toList t))
+    : toList (insert a t) = Insertion.sort.insert a (toList t) \elim t
+    | rbLeaf => idp
+    | rbBranch c t1 a1 t2 => mcases \with {
+      | inl a1<a =>
+        \have q => Sorted.suffix {_} {toList t1 ++ a1 :: nil} {toList t2} (rewrite ++-assoc s)
+        \in toList-balanceRight *> pmap (toList t1 ++ a1 :: __) (toList-insert a t2 q)
+          *> TreeSort.insert=insert'.insert-in-suffix _ _ s a1<a
+      | inr a<=a1 => toList-balanceLeft *> pmap (__ ++ a1 :: toList t2) (toList-insert a t1 (Sorted.prefix s))
+        *> TreeSort.insert=insert'.insert-in-prefix _ _ a<=a1
+    }
+
+  -- Эти две леммы -- это основное свойство функций балансировки
+  \lemma toList-balanceLeft {A : \Set} {c : Color} {l : RBTree A} {v : A} {r : RBTree A}
+    : toList (balanceLeft c l v r) = toList (rbBranch c l v r) => mcases {balanceLeft} equation
+
+  \lemma toList-balanceRight {A : \Set} {c : Color} {l : RBTree A} {v : A} {r : RBTree A}
+    : toList (balanceRight c l v r) = toList (rbBranch c l v r) => mcases {balanceRight} equation
+}
+
+-- пример mcases
+\func not-isInv (b : Bool) : not (not b) = b
+  => mcases {not, 2} \with {
+    | true => idp
+    | false => idp
+  }
+
+-- 6. Tail recursive red-black tree sort
+
+\module TRRedBlack \where {
+  \open RedBlack.sort
+  \open RedBlack
+
+  \func sort {A : Dec} (l : List A) => toList (mkTree l rbLeaf)
+
+  \func mkTree {A : Dec} (l : List A) (\strict r : RBTree A) : RBTree A \elim l
+    | nil => r
+    | :: a l => mkTree l (repaint (insert a r))
+
+  \lemma sort=rbSort {A : Dec} (l : List A) : sort l = RedBlack.sort l
+    => rewriteF ++_nil $ mkTree=buildTree l nil
+
+  \lemma mkTree=buildTree {A : Dec} (l l' : List A)
+    : toList (mkTree l (buildTree l')) = toList (buildTree (l ++ l'))
+    => {?}
+
+  \lemma buildTree-sorted {A : Dec} (l : List A) : Sorted (toList (buildTree l))
+    => {?}
+
+  \lemma toList-insert' {A : Dec} (a : A) {l : List A}
+    : toList (insert a (buildTree l)) = Insertion.sort.insert a (toList (buildTree l))
+    => {?}
+
+  \lemma buildTree-insert {A : Dec} (a : A) (l l' : List A)
+    : toList (buildTree (l ++ a :: l')) = toList (repaint (insert a (buildTree (l ++ l'))))
+    => {?}
+}
