@@ -332,17 +332,31 @@
     => rewriteF ++_nil $ mkTree=buildTree l nil
 
   \lemma mkTree=buildTree {A : Dec} (l l' : List A)
-    : toList (mkTree l (buildTree l')) = toList (buildTree (l ++ l'))
-    => {?}
-
-  \lemma buildTree-sorted {A : Dec} (l : List A) : Sorted (toList (buildTree l))
-    => {?}
-
-  \lemma toList-insert' {A : Dec} (a : A) {l : List A}
-    : toList (insert a (buildTree l)) = Insertion.sort.insert a (toList (buildTree l))
-    => {?}
+    : toList (mkTree l (buildTree l')) = toList (buildTree (l ++ l')) \elim l
+    | nil => idp
+    | a :: l => mkTree=buildTree l (a :: l') *> buildTree-insert _ _ _
 
   \lemma buildTree-insert {A : Dec} (a : A) (l l' : List A)
     : toList (buildTree (l ++ a :: l')) = toList (repaint (insert a (buildTree (l ++ l'))))
-    => {?}
+  \elim l
+    | nil => idp
+    | a' :: l => rewrite
+        ( toList-repaint
+        , toList-repaint
+        , toList-insert' _
+        , toList-insert _ _ (buildTree-sorted (a' :: l ++ l'))
+        , toList-repaint
+        , toList-insert' _
+        , Insertion.sort.insert-comm _ _ (buildTree-sorted _)
+        )
+      $ pmap (Insertion.sort.insert a')
+      $ buildTree-insert _ _ _ *> toList-repaint _ *> toList-insert' _
+
+  \lemma buildTree-sorted {A : Dec} (l : List A) : Sorted (toList (buildTree l)) \elim l
+    | nil => sorted-nil
+    | a :: l => rewrite (toList-repaint, toList-insert') (Insertion.sort-sorted.insert-sorted a (buildTree-sorted l))
+
+  \lemma toList-insert' {A : Dec} (a : A) {l : List A}
+    : toList (insert a (buildTree l)) = Insertion.sort.insert a (toList (buildTree l))
+    => toList-insert _ _ (buildTree-sorted _)
 }
