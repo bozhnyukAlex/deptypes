@@ -1,8 +1,17 @@
+\import Algebra.Meta
+\import Arith.Nat
+\import Combinatorics.Factorial
 \import Data.Bool
 \import Data.List \hiding (headDef)
+\import Function.Meta
+\import Logic (Not, absurd)
+\import Logic.Meta
+\import Meta
+\import Order.LinearOrder
+\import Paths
+\import Paths.Meta
 \import hw07
 \import lect08
-\import Order.LinearOrder
 \open LinearOrder
 
 -- 1. Реализуйте функцию filter и докажите ее корректность, то есть, что выполнены следующие условия:
@@ -10,28 +19,191 @@
 --    * Все элементы filter p xs удовлетворяют предикату p
 --    * Любой подсписок xs с тем же свойством является подсписком filter p xs
 
+\func filter {A : \Type} (p : A -> Bool) (xs : List A) : List A \elim xs
+  | nil => nil
+  | a :: xs => \case p a \with {
+    | false => filter p xs
+    | true => a :: filter p xs
+  }
+
+\func filter-sublist {A : \Type} (p : A -> Bool) (xs : List A) : Sublist (filter p xs) xs \elim xs
+  | nil => sublist-nil
+  | a :: xs => mcases \with {
+    | false => sublist-skip (filter-sublist p xs)
+    | true => sublist-heads idp (filter-sublist p xs)
+  }
+
+\func filter-sat-p {A : \Type}
+                   (p : A -> Bool)
+                   (xs : List A)
+                   (x : A) :
+  In x (filter p xs) -> So (p x) \elim xs
+  | nil => \lam x => \case x
+  | a :: xs => cases (p a arg addPath) \with {
+    | false, _ => filter-sat-p p xs x
+    | true, q => \lam in => \case in \with {
+      | in-hd s => rewrite (s, q) ()
+      | in-tl i => filter-sat-p p xs x i
+    }
+  }
+
+\func filter-sublist-sat-p {A : \Type}
+                           (p : A -> Bool)
+                           (xs ys : List A)
+                           (ys-sub-xs : Sublist ys xs)
+                           (ys-correct : \Pi (y : A) -> In y ys -> So (p y)) :
+  Sublist ys (filter p xs) \elim xs, ys, ys-sub-xs
+  | nil, nil, sublist-nil => sublist-nil
+  | x :: xs, ys, sublist-skip ys-sub-xs => mcases \with {
+    | false => filter-sublist-sat-p p xs ys ys-sub-xs ys-correct
+    | true => sublist-skip (filter-sublist-sat-p p xs ys ys-sub-xs ys-correct)
+  }
+  | x :: xs, y :: ys, sublist-heads q ys-sub-xs => cases (p x arg addPath) \with {
+    | false, s => absurd (transport So s (ys-correct x (in-hd (inv q))))
+    | true, _ => sublist-heads q (filter-sublist-sat-p p xs ys ys-sub-xs \lam y y-in-ys => ys-correct y (in-tl y-in-ys))
+  }
+
 -- 2. Докажите, что Perm l1 l2 тогда и только тогда, когда Insertion.sort l1 = Insertion.sort l2
+
+\func perm-sym {A : \Type} {l1 l2 : List A} (perm : Perm l1 l2) : Perm l2 l1 \elim l1, l2, perm
+  | nil, nil, perm-nil => perm-nil
+  | x :: l1, y :: l2, perm-cons p perm => perm-cons (inv p) (perm-sym perm)
+  | l1, l2, perm-trans perm1 perm2 => perm-trans (perm-sym perm2) (perm-sym perm1)
+  | x :: (x' :: l1), y :: (y' :: l2), perm-swap p q s => perm-swap (inv q) (inv p) (inv s)
+
+\func perm-SortEq {A : Dec} {l1 l2 : List A} (p : Insertion.sort l1 = Insertion.sort l2) : Perm l1 l2 =>
+  perm-trans (Insertion.sort-perm l1) (rewrite p (perm-sym (Insertion.sort-perm l2)))
+
+\func sortEq-perm {A : Dec} {l1 l2 : List A} (perm : Perm l1 l2) : Insertion.sort l1 = Insertion.sort l2 \elim l1, l2, perm
+  | nil, nil, perm-nil => idp
+  | x :: l1, y :: l2, perm-cons p perm => rewrite p (pmap (Insertion.sort.insert y) (sortEq-perm perm))
+  | l1, l2, perm-trans perm1 perm2 => sortEq-perm perm1 *> sortEq-perm perm2
+  | x :: (x' :: l1), y :: (y' :: l2), perm-swap p q s => rewrite (p, q, s) (Insertion.sort.insert-comm y' y (Insertion.sort-sorted l2))
 
 -- 3. Докажите, что спецификация "результат является перестановкой входа и отсортирован" является полной для функции sort
 
-\func completeness {A : Dec} (sort : List A -> List A) (l : List A) (p : Perm l (sort l)) (s : Sorted (sort l))
-  : sort l = Insertion.sort l => {?}
+\func insertion-sort-sorted {A : Dec} {l : List A} (s : Sorted l) : l = Insertion.sort l \elim l, s
+  | nil, _ => idp
+  | a :: l, sorted-cons a-leq-head s => rewriteI (insertion-sort-sorted s) (insert-hd-sorted s a-leq-head)
+  \where {
+    \func insert-hd-sorted {A : Dec} {l : List A} (_ : Sorted l) {a : A}
+                           (a-leq-head : a <= Data.List.headDef a l) : a :: l = Insertion.sort.insert a l \elim l
+      | nil => idp
+      | a :: l => rewrite (dec<=_reduce a-leq-head) idp
+  }
+
+\func completeness {A : Dec} (sort : List A -> List A) (l : List A) (p : Perm l (sort l)) (s : Sorted (sort l)) : sort l = Insertion.sort l =>
+  rewrite (insertion-sort-sorted s) (sortEq-perm (perm-sym p))
 
 -- 4. Определите факториал через хвостовую рекурсию
 --    Докажите, что он равен обычному определению факториала
+
+\func factorial (n : Nat) => fact n 1
+  \where {
+    \func fact (n : Nat) (acc : Nat) : Nat \elim n
+      | 0 => acc
+      | suc n => fact n (suc n Nat.* acc)
+  }
+
+\func factorial-correct : factorial = fac => ext \lam _ => fact-correct *> NatSemiring.ide-left
+  \where {
+    \func fact-correct {n acc : Nat} : factorial.fact n acc = acc Nat.* fac n \elim n
+      | 0 => idp
+      | suc n => fact-correct *> equation
+  }
 
 -- 5. Определите функцию, которая проверяет правильность скобочной последовательности
 --    Докажите ее корректность
 
 \data Paren | Left | Right
 
-\func isBalanced (xs : List Paren) : Bool
-  => {?}
+\func isBalanced (xs : List Paren) : Bool => isBalanced-helper xs 0
+  \where {
+    \func isBalanced-helper (xs : List Paren) (descent : Nat) : Bool \elim xs, descent
+      | nil, 0 => true
+      | nil, suc _ => false
+      | Left :: xs1, descent' => isBalanced-helper xs1 (suc descent')
+      | Right :: _, 0 => false
+      | Right :: xs1, suc descent' => isBalanced-helper xs1 descent'
+  }
 
 \data Balanced (xs : List Paren) \with
   | nil => nil-balanced
   | :: Left xs => cons-balanced {ys : List Paren} (Balanced ys) (xs = ys ++ Right :: nil)
   | xs => append-balanced {ys zs : List Paren} (Balanced ys) (Balanced zs) (xs = ys ++ zs)
 
-\func isBalanced-correct (xs : List Paren) : (isBalanced xs = true) <-> Balanced xs
-  => {?}
+\func isBalanced-correct (xs : List Paren) : (isBalanced xs = true) <-> Balanced xs =>
+  (isBalancedToBalanced xs (suc $ length xs) linarith, BalancedToisBalanced xs)
+  \where {
+    \func isBalancedToBalanced (xs : List Paren) (more-than-len : Nat) (has-small-len : length xs NatSemiring.< more-than-len) (is-balanced : isBalanced xs = true)
+      : Balanced xs \elim xs, more-than-len
+      | nil, _ => nil-balanced
+      | a :: xs, suc m =>
+        \let | (l, r, plb, prb, pls, prs) => parse-first-paren-pair (a :: xs) is-balanced (\lam _ => contradiction)
+             | balancedL => isBalancedToBalanced l m (\let p => <_suc_<= has-small-len \in linarith) plb
+             | balancedR => isBalancedToBalanced r m (\let p => <_suc_<= has-small-len \in linarith) prb
+             | raw => append-balanced {_} {Left :: l ++ Right :: nil} {r} (cons-balanced {_} balancedL idp) balancedR idp
+        \in rewrite (inv $ parse-splits' _ _ _, list-assoc-application _ _) raw
+      \where {
+        \func parse-first-paren-pair (xs : List Paren) (is-balanced : isBalanced xs = true) (not-nil : Not $ xs = nil)
+          : \Sigma (l : List Paren) (r : List Paren)
+                   (plb : isBalanced l = true) (prb : isBalanced r = true)
+                   (pls : length l NatSemiring.< length xs) (prb : length r NatSemiring.< length xs)
+        \elim xs, is-balanced, not-nil
+          | nil, is-balanced, p => contradiction
+          | Left :: xs1, is-balanced, p => aux xs1 0 is-balanced
+          \where {
+            \func aux (xs : List Paren) (target-descent : Nat) (_ : isBalanced.isBalanced-helper xs (suc target-descent) = true) :
+              \Sigma (l : List Paren) (r : List Paren)
+                     (plb : isBalanced.isBalanced-helper l target-descent = true) (prb : isBalanced r = true)
+                     (pls : length l NatSemiring.< suc (length xs)) (prb : length r NatSemiring.< suc (length xs))
+              | Right :: xs1, 0, isb => (nil, xs1, idp, isb, linarith, linarith)
+              | Left :: xs1, target-descent, isb => \let (l, r, plb, prb, pls, prs) => aux xs1 (suc target-descent) isb \in (Left :: l, r, plb, prb, linarith, linarith)
+              | Right :: xs1, suc target-descent, isb => \let (l, r, plb, prb, pls, prs) => aux xs1 target-descent isb \in (Right :: l, r, plb, prb, linarith, linarith)
+          }
+
+        \func parse-splits' (a : Paren) (xs : List Paren) (is-balanced : isBalanced (a :: xs) = true) :
+          Left :: (parse-first-paren-pair (a :: xs) is-balanced (\lam _ => contradiction)).1 ++ Right :: (parse-first-paren-pair (a :: xs) is-balanced (\lam _ => contradiction)).2 = (a :: xs)
+          | Left, xs1, is-balanced-1 => pmap ((::) Left) $ parse-splits xs1 0 is-balanced-1
+
+        \func parse-splits (xs : List Paren) (target-descent : Nat) (is-balanced : isBalanced.isBalanced-helper xs (suc target-descent) = true)
+          : (parse-first-paren-pair.aux xs target-descent is-balanced).1 ++ Right :: (parse-first-paren-pair.aux xs _ is-balanced).2 = xs
+          | Left :: xs1, target-descent, is-balanced-1 => \let rec => parse-splits xs1 (suc target-descent) is-balanced-1 \in pmap ((::) Left) rec
+          | Right :: xs1, 0, is-balanced-1 => idp
+          | Right :: xs1, suc target-descent, isb1 => pmap ((::) Right) $ parse-splits xs1 target-descent isb1
+
+        \func list-assoc-application (xs ys : List Paren) : Left :: xs ++ Right :: ys = (Left :: xs ++ Right :: nil) ++ ys =>
+          equation
+      }
+
+    \func BalancedToisBalanced (xs : List Paren) (bal : Balanced xs) : isBalanced xs = true \elim xs, bal
+      | nil, nil-balanced => idp
+      | Left :: xs1, cons-balanced bal p => rewrite p $ wrapped-isBalanced _ (BalancedToisBalanced _ bal)
+      | xs1, append-balanced {ys} {zs} bal1 bal2 p => rewrite p $ append-is-balanced ys zs (BalancedToisBalanced ys bal1) (BalancedToisBalanced zs bal2)
+
+    \func append-is-balanced (xs ys : List Paren) (x-bal : isBalanced xs = true) (y-bal : isBalanced ys = true) : isBalanced (xs ++ ys) = true =>
+      append-is-balanced-helper 0 x-bal y-bal
+      \where {
+        \func append-is-balanced-helper {xs ys : List Paren}
+                                        (descent : Nat)
+                                        (xs-bad : isBalanced.isBalanced-helper xs descent = true)
+                                        (ys-bal : isBalanced ys = true)
+          : isBalanced.isBalanced-helper (xs ++ ys) descent = true
+        \elim xs, descent, xs-bad
+          | nil, 0, xs-bad => ys-bal
+          | Left :: xs1, descent, xs-bad => append-is-balanced-helper _ xs-bad ys-bal
+          | Right :: xs1, suc descent, xs-bad => append-is-balanced-helper _ xs-bad ys-bal
+      }
+
+    \func wrapped-isBalanced (ys : List Paren) (bal : isBalanced ys = true) : isBalanced (Left :: (ys ++ Right :: nil)) = true =>
+      ++-right-balanced-after-descent-1 ys 0 bal
+      \where {
+        \func ++-right-balanced-after-descent-1 (xs : List Paren) (descent : Nat) (xs-bal : isBalanced.isBalanced-helper xs descent = true)
+          : isBalanced.isBalanced-helper (xs ++ Right :: nil) (suc descent) = true \elim xs, descent, xs-bal
+          | nil, 0, xs-bal => idp
+          | nil, suc descent, xs-bal => contradiction
+          | Left :: xs1, descent, xs-bal => ++-right-balanced-after-descent-1 xs1 (suc descent) xs-bal
+          | Right :: xs1, suc descent, xs-bal => ++-right-balanced-after-descent-1 xs1 descent xs-bal
+          | Right :: xs1, 0, xs-bal => contradiction
+      }
+  }
