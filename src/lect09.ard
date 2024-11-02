@@ -1,0 +1,208 @@
+\import Data.Maybe
+\import Function.Meta
+\import Logic
+\import Meta
+\import Paths
+\import Paths.Meta
+\import lect06 (Functor, fmap)
+\import lect07
+
+\class Monad \extends Functor
+  | return {A : \Type} : A -> F A
+  | \infixl 2 >>= {A B : \Type} : F A -> (A -> F B) -> F B
+  | return-left {A B : \Type} (a : A) (k : A -> F B) : return a >>= k = k a
+  | return-right {A : \Type} (m : F A) : m >>= return = m
+  | >>=-assoc {A B C : \Type} (m : F A) (k : A -> F B) (l : B -> F C) : (m >>= k) >>= l = m >>= (\lam x => k x >>= l)
+  | fmap f m => m >>= \lam a => return (f a)
+  | fmap-id => return-right
+  | fmap-comp f g m => pmap (m >>=) (ext \lam a => inv (return-left _ _)) *> inv (>>=-assoc _ _ _)
+
+\instance MaybeMonad : Monad Maybe
+  | return => just
+  | >>= {A B : \Type} (m : Maybe A) (k : A -> Maybe B) : Maybe B \elim m {
+    | nothing => nothing
+    | just a => k a
+  }
+  | return-left _ _ => idp
+  | return-right m => mcases {>>=} idp
+  | >>=-assoc m k l => mcases {>>=, 2} idp
+
+-- 1. Лямбда исчисление
+
+-- Term V -- тип термов, свободные переменные которых лежат в V
+\data Term (V : \Set)
+  | unit
+  | var V
+  | app (Term V) (Term V)
+  | lam (Term (Maybe V))
+
+-- \x y. x
+-- lam "x" (lam "y" (var "x"))
+\func example {V : \Set} : Term V
+  => lam (lam (var (just nothing)))
+
+-- fmap для терма, как функтора над V
+\func termMap {A B : \Set} (f : A -> B) (t : Term A) : Term B \elim t
+  | unit => unit
+  | var v => var (f v)
+  | app t1 t2 => app (termMap f t1) (termMap f t2)
+  | lam t => lam (termMap (fmap f) t)
+
+{-
+-- Это некорректное определение termMap just
+\func lift {A : \Set} (t : Term A) : Term (Maybe A) \elim t
+  | var v => var (just v)
+  | unit => unit
+  | app t1 t2 => app (termMap just t1) (termMap just t2)
+  | lam t => lam (lift t)
+-}
+
+-- Элиминатор для Maybe
+\func maybe {A B : \Type} (b : B) (j : A -> B) (m : Maybe A) : B \elim m
+  | nothing => b
+  | just a => j a
+
+-- Поднятие подстановки
+\func liftM {A B : \Set} (k : A -> Term B) (m : Maybe A) : Term (Maybe B)
+  => maybe (var nothing) (\lam a => termMap just (k a)) m
+
+-- Терм -- это монада
+\instance TermMonad : Monad Term
+  | return => var
+  | >>= {A B : \Set} (t : Term A) (k : A -> Term B) : Term B \elim t {
+    | unit => unit
+    | var v => k v
+    | app t1 t2 => app (t1 >>= k) (t2 >>= k)
+    | lam t => lam (t >>= liftM k)
+  }
+  | return-left _ _ => idp
+  | return-right {A : \Set} (t : Term A) : t >>= var = t \elim t {
+    | unit => idp
+    | var v => idp
+    | app t1 t2 => pmap2 app (return-right t1) (return-right t2)
+    | lam t => pmap lam $ (pmap (t >>=) $ unfold liftM (ext \case \elim __ \with {
+      | nothing => idp
+      | just a => idp
+    })) *> return-right t
+  }
+  | >>=-assoc => {?} -- это упражнение
+
+-- Отношение одношаговой редукции:
+-- * app (lam f) a ~> f[a]
+-- * Совместимость (взаимодействие редукции с применением и абстракцией)
+\data Red1 {V : \Set} (t s : Term V) \elim t, s
+  | app t1 t2, s => beta (f : Term (Maybe V)) (t1 = lam f) (s = f >>= maybe t2 var)
+  | app t1 t2, app s1 s2 => {
+    | red-left (Red1 t1 s1) (t2 = s2)
+    | red-right (t1 = s1) (Red1 t2 s2)
+  }
+  | lam t, lam s => red-lam (Red1 t s)
+
+-- Если red -- некоторое отношение на A, то элемент a : A называется достижимым,
+-- если не существует бесконечных цепочек редукций, начинающихся в a
+-- Это определение хорошо работает только классически, интуиционистски мы определяем предикат достижимости индуктивно
+-- В индуктивном построении будет всего одно правило: a -- достижим, если достижимы все a', к котором a редуцируется
+\data Acc {A : \Type} (red : A -> A -> \Type) (a : A)
+  | acc (\Pi (a' : A) -> red a a' -> Acc red a')
+
+-- Так как функция вычисления термов должна быть тотальна, то мы определим ее только для достижимых термов
+-- Она будет дополнительно принимать стратегию редукции, то есть функцию,
+-- которая для каждого терма возвращает либо терм, к которому он редуцируется, либо доказательство, что таких термов нет
+-- Функция eval возвращает терм вместе с доказательством, что он находится в нормальной форме
+\func eval {V : \Set} (t : Term V) (a : Acc Red1 t)
+           (str : \Pi (s : Term V) -> Decide (\Sigma (q : Term V) (Red1 s q)))
+  : \Sigma (s : Term V) (\Pi (q : Term V) -> Not (Red1 s q)) \elim a
+  | acc f => \case str t \with {
+    | yes (t', t->t') => eval t' (f _ t->t') str
+    | no n => (t, \lam q r => n (q, r))
+  }
+
+-- Пример факта про достижимость: если t достижим, то и lam t достижим
+\func lamAcc {V : \Set} (t : Term (Maybe V)) (a : Acc Red1 t) : Acc Red1 (lam t) \elim a
+  | acc f => acc (\lam t' r => \case \elim t', \elim r \with {
+    | lam t', red-lam r => lamAcc t' (f t' r)
+  })
+
+-- 2. Нейтральные термы
+
+-- Терм называется нейтральным, если он достижим и в голове не содержит лямбду
+-- Точнее предикат нейтральности определяется индуктивно:
+-- * Переменные и unit нейтральны
+-- * Применение нейтрально, если левый аппликанд нейтральный, а правый достижим
+\data Neutral {V : \Set} (t : Term V) \elim t
+  | unit => unit-neutral
+  | var _ => var-neutral
+  | app t1 t2 => app-neutral (Neutral t1) (Acc Red1 t2)
+
+-- Нейтральные термы замкнуты относительно редукций
+\func neutralRed {V : \Set} {t s : Term V} (r : Red1 t s) (n : Neutral t) : Neutral s \elim t, s, r, n
+  | app t1 t2, s, beta f idp p, app-neutral () a
+  | app t1 t2, app s1 s2, red-left r idp, app-neutral n a => app-neutral (neutralRed r n) a
+  | app t1 t2, app s1 s2, red-right idp r, app-neutral n (acc f) => app-neutral n (f s2 r)
+
+-- Нейтральные термы действительно достижимы
+\func neutralAcc {V : \Set} {t : Term V} (n : Neutral t) : Acc Red1 t \elim t, n
+  | unit, unit-neutral => acc \lam _ => \case __
+  | var _, var-neutral => acc \lam _ => \case __
+  | app t1 t2, app-neutral n a => neutralAppAcc n (neutralAcc n) a
+  \where {
+
+  -- Для доказательства утверждения neutralAcc нам понадобится вспомогательное утверждение,
+  -- которое говорит, что app t s достижим, если t и s достижимы и t нейтрален
+  \func neutralAppAcc {V : \Set} {t s : Term V} (n : Neutral t) (a1 : Acc Red1 t) (a2 : Acc Red1 s)
+    : Acc Red1 (app t s) \elim a1, a2
+    | acc f, acc g => acc (\lam t' r => \case \elim t', \elim r \with {
+      | t', beta f1 p1 p2 => \case rewriteF p1 n
+      | app t' s', red-left r idp => neutralAppAcc (neutralRed r n) (f t' r) (acc g)
+      | app t' s', red-right idp r => neutralAppAcc n (acc f) (g s' r)
+    })
+  }
+
+-- 3. Типизация
+
+-- Теперь определим отношение типизации на термах
+-- Для этого сначала определим тип типов просто типизированного лямбда исчисления
+\data Type
+  | Unit
+  | Arr Type Type
+
+-- Отношение типизации определяется индуктивно обычным способом
+\data hasType {V : \Set} (ctx : V -> Type) (t : Term V) (T : Type) \elim t, T
+  | unit, Unit => unit-type
+  | var v, T => var-type (ctx v = T)
+  | app t1 t2, S => app-type (T : Type) (hasType ctx t1 (Arr T S)) (hasType ctx t2 T)
+  | lam t, Arr T S => lam-type (hasType (maybe T ctx) t S)
+
+-- 4. Типизируемые термы достижимы
+
+-- Чтобы доказать, что типизируемые термы достижимы, определим вспомогательный предикат "интерпретация T"
+-- для каждого типа T, удовлетворяющий следующим условиям:
+-- * Если t имеет тип T, то t лежит в интерпретации T. Это утверждение останется в качестве упражнения (typeableInterpId)
+-- * Если t лежит в интерпретации T, то t достижим. Это доказывается индукцией по типу (interpAcc)
+
+\func Interp {V : \Set} (T : Type) (t : Term V) : \Type \elim T
+  | Unit => Acc Red1 t
+  | Arr T1 T2 => \Pi (s : Term V) -> Interp T1 s -> Interp T2 (app t s)
+
+\func interpAcc {V : \Set} (T : Type) (t : Term V) (i : Interp T t) : Acc Red1 t \elim T
+  | Unit => i
+  | Arr T1 T2 => appAccLeft $ interpAcc _ _ (i unit (neutralInterp T1 unit-neutral))
+
+-- Одновременно с interpAcc мы докажем, что любой нейтральный терм лежим в интерпретации T
+\func neutralInterp {V : \Set} (T : Type) {t : Term V} (n : Neutral t) : Interp T t \elim T
+  | Unit => neutralAcc n
+  | Arr T1 T2 => \lam s i => neutralInterp T2 (app-neutral n (interpAcc T1 s i))
+
+\func appAccLeft {V : \Set} {t s : Term V} (a : Acc Red1 (app t s)) : Acc Red1 t => {?} -- это упражнение
+
+\func typeableInterpId {V : \Set} (ctx : V -> Type) (t : Term V) (T : Type) (p : hasType ctx t T) : Interp T t
+  => rewriteF return-right $ typeableInterp ctx var (\lam u => neutralInterp (ctx u) var-neutral) p
+
+-- Это более общее утверждение необходимо для усиления индукционной гипотезы
+\func typeableInterp {U V : \Set} (ctx : U -> Type) (env : U -> Term V)
+                     (C : \Pi (u : U) -> Interp (ctx u) (env u)) {t : Term U} {T : Type}
+                     (p : hasType ctx t T)
+  : Interp T (t >>= env) => {?} -- это упражнение
+
+\func typeableAcc {V : \Set} (ctx : V -> Type) (t : Term V) (T : Type) (h : hasType ctx t T) : Acc Red1 t
+  => interpAcc T t (typeableInterpId ctx t T h)
