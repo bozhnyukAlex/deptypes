@@ -57,7 +57,7 @@
   | lam t => lam (lift t)
 -}
 
--- Элиминатор для Maybe
+-- Рекурсор для Maybe
 \func maybe {A B : \Type} (b : B) (j : A -> B) (m : Maybe A) : B \elim m
   | nothing => b
   | just a => j a
