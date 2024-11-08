@@ -1,13 +1,14 @@
 \import Data.Maybe
 \import Function
 \import Function.Meta
+\import Logic
 \import Meta
 \import Paths
 \import Paths.Meta
 \import hw07 (ReflTransClosure)
 \import lect04 (sym)
 \import lect06 (fmap-comp)
-\import lect07 (Decide)
+\import lect07 (Decide, no, yes)
 \import lect09
 
 -- 1. Докажите, что оператор >>= ассоциативен для Monad Term
@@ -57,7 +58,41 @@
 --    к которому он редуцируется за 1 шаг, либо доказательство, что таких термов нет
 --    Определите любую стратегию редукции
 
-\func strategy {V : \Set} (t : Term V) : Decide (\Sigma (s : Term V) (Red1 t s)) => {?}
+\func strategy {V : \Set} (t : Term V) : Decide (\Sigma (s : Term V) (Red1 t s)) \elim t
+  | var v => no (\lam d => \case d.2)
+  | unit => no (\lam d => \case d.2)
+  | app t1 t2 => \case strategy t1 \with {
+    | yes (s1, r) => yes (app s1 t2, red-left r idp)
+    | no n1 => \case strategy t2 \with {
+      | yes (s2, r) => yes (app t1 s2, red-right idp r)
+      | no n2 =>
+        \case isLam t1 \with {
+          | yes (t1', q) => rewrite q $ yes (_, beta t1' idp idp)
+          | no n => no $ \case \elim __ \with {
+            | (lam s, beta t1' p p') => n (t1', p)
+            | (app s1 s2, beta t1' p p') => n (t1', p)
+            | (app s1 s2, red-left r p) => n1 (s1, r)
+            | (app s1 s2, red-right p r) => n2 (s2, r)
+            | (var v, beta t1' p p') => n (t1', p)
+            | (unit, beta t1' p p') => n (t1', p)
+          }
+        }
+    }
+  }
+  | lam t => \case strategy t \with {
+    | yes (s, r) => yes (lam s, red-lam r)
+    | no n => no $ \case \elim __ \with {
+      | (lam s, red-lam r) => \case n (s, r)
+      | (app s1 s2, r) => \case r
+      | (var v, r) => \case r
+      | (unit, r) => \case r
+    }
+  }
+  \where \func isLam {V : \Set} (t : Term V) : Decide (\Sigma (t' : _) (t = lam t')) \elim t
+    | lam t' => yes (t', idp)
+    | app t1 t2 => no $ \lam d => \case d.2
+    | var v => no $ \lam d => \case d.2
+    | unit => no $ \lam d => \case d.2
 
 -- 4. Докажите, что подтермы достижимого терма достижимы
 
