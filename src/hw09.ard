@@ -1,15 +1,57 @@
 \import Data.Maybe
+\import Function
+\import Function.Meta
+\import Meta
+\import Paths
+\import Paths.Meta
+\import hw07 (ReflTransClosure)
+\import lect04 (sym)
+\import lect06 (fmap-comp)
 \import lect07 (Decide)
 \import lect09
 
 -- 1. Докажите, что оператор >>= ассоциативен для Monad Term
 
 \func Term->>=-assoc {A B C : \Set} (t : Term A) (k : A -> Term B) (l : B -> Term C)
-  : t >>= k >>= l = {Term C} t >>= (\lam a => k a >>= l) => {?}
+  : t >>= k >>= l = {Term C} t >>= (\lam a => k a >>= l) \elim t {
+  | app a b => pmap2 app (Term->>=-assoc _ _ _) (Term->>=-assoc _ _ _)
+  | lam t => pmap lam $ Term->>=-assoc _ _ _ *> bind-ext \lam x => \case \elim x \with {
+    | nothing => idp
+    | just a => unfold liftM $ TermMap>>= *> sym TermMap>>=-comm
+  }
+  | var v => idp
+  | unit => idp
+} \where {
+  \func bind-ext {A B : \Set} {f g : Maybe A -> Term B} {t : Term (Maybe A)} (p : \Pi (x : Maybe A) -> f x = g x) : t >>= f = t >>= g =>
+    pmap (t >>=) (ext p)
+
+  \func TermMap>>= {A B C : \Set} {f : A -> B} {g : B -> Term C} {t : Term A} : termMap f t >>= g = t >>= g o f \elim t
+    | app a b => pmap2 app TermMap>>= TermMap>>=
+    | lam t => pmap lam $ TermMap>>= *> bind-ext \lam x => cases x idp
+    | var v => idp
+    | unit => idp
+
+  \func PTermMap {A B : \Set} {t : Term A} => pmap (\lam (k : A -> B) => termMap k t)
+
+  \func TermMap-compose {A B C : \Set} {f : A -> B} {g : B -> C} {t : Term A} : termMap g (termMap f t) = termMap (g o f) t \elim t
+    | app a b => pmap2 app TermMap-compose TermMap-compose
+    | lam t => pmap lam $ TermMap-compose *> PTermMap (sym $ ext \lam m => fmap-comp _ _ m)
+    | var v => idp
+    | unit => idp
+
+  \func TermMap>>=-comm {A B C : \Set} {f : B -> C} {g : A -> Term B} {t : Term A} : termMap f (t >>= g) = t >>= (\lam x => termMap f (g x)) \elim t
+    | app a b => pmap2 app TermMap>>=-comm TermMap>>=-comm
+    | lam t => pmap lam $ TermMap>>=-comm *> bind-ext \lam x => \case \elim x \with {
+      | nothing => idp
+      | just v => unfold liftM $ TermMap-compose *> PTermMap (ext \lam m => return-left m _) *> sym TermMap-compose
+    }
+    | var v => idp
+    | unit => idp
+}
 
 -- 2. Определите отношение многошаговой редукции на Term
 
-\func Red {V : \Set} (t s : Term V) : \Type => {?}
+\func Red {V : \Set} (t s : Term V) : \Type => ReflTransClosure Red1 t s
 
 -- 3. Стратегия редукции -- это функция, которая каждому терму сопоставляет либо некоторый терм,
 --    к которому он редуцируется за 1 шаг, либо доказательство, что таких термов нет
@@ -19,14 +61,14 @@
 
 -- 4. Докажите, что подтермы достижимого терма достижимы
 
-\func appAccLeft {V : \Set} {t s : Term V} (a : Acc Red1 (app t s)) : Acc Red1 t
-  => {?}
+\func appAccLeft {V : \Set} {t s : Term V} (a : Acc Red1 (app t s)) : Acc Red1 t \elim a
+  | acc f => acc \lam t' red1tt' => appAccLeft (f (app t' s) (red-left red1tt' idp))
 
-\func appAccRight {V : \Set} {t s : Term V} (a : Acc Red1 (app t s)) : Acc Red1 s
-  => {?}
+\func appAccRight {V : \Set} {t s : Term V} (a : Acc Red1 (app t s)) : Acc Red1 s \elim a
+  | acc f => acc \lam s' red1ss' => appAccRight (f (app t s') (red-right idp red1ss'))
 
-\func subLamAcc {V : \Set} {t : Term (Maybe V)} (a : Acc Red1 (lam t)) : Acc Red1 t
-  => {?}
+\func subLamAcc {V : \Set} {t : Term (Maybe V)} (a : Acc Red1 (lam t)) : Acc Red1 t \elim a
+  | acc f => acc \lam t' redtt' => subLamAcc (f (lam t') (red-lam redtt'))
 
 -- 5. Докажите следующую обобщенную лемму о подстановке и выведите из нее обычную версию:
 --    если Г, x : A |- b : B и Г |- a : A, то Г |- b[a/x] : B
