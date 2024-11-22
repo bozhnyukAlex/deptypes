@@ -1,27 +1,93 @@
 \import Data.Bool
+\import Equiv
+\import Equiv.Univalence
 \import Function
+\import Function.Meta
 \import Logic (<->)
+\import Meta
+\import Paths (*>, *>_inv, inv, pmap)
+\import Paths.Meta
+\import lect04 (sym)
+\import lect10 (setLem)
 \import lect11
 
 -- 1. Докажите, что если A : \Prop, то Trunc A эквивалентен A
 
-\func trunc-prop {A : \Prop} : Trunc A <-> A => {?}
+\func trunc-prop {A : \Prop} : Trunc A <-> A =>
+  (Trunc-elim id, trunc)
 
 -- 2. Докажите следующий закон де Моргана
 
-\func deMorgan (A B C : \Prop) : (\Sigma A (B `Or` C)) <-> ((\Sigma A B) `Or` (\Sigma A C)) => {?}
+\func deMorgan (A B C : \Prop) : (\Sigma A (B `Or` C)) <-> ((\Sigma A B) `Or` (\Sigma A C)) =>
+  (deMorgan-=>, deMorgan-<=)
+  \where {
+    \func deMorgan-=> {A B C : \Prop} (h : \Sigma A (Or B C)) : Or (\Sigma A B) (\Sigma A C) \elim h
+      | (a, inl b) => inl (a, b)
+      | (a, inr c) => inr (a, c)
+
+    \func deMorgan-<= {A B C : \Prop} (h : Or (\Sigma A B) (\Sigma A C)) : \Sigma A (Or B C) \elim h
+      | inl (a, b) => (a, inl b)
+      | inr (a, c) => (a, inr c)
+  }
 
 -- 3. Определите элиминатор для Or через Or-rec, не используя паттерн матчинг на Or
 
 \func Or-elim {A B : \Prop} (C : Or A B -> \Prop)
               (f : \Pi (x : A) -> C (inl x)) (g : \Pi (y : B) -> C (inr y))
-              (p : A `Or` B) : C p => {?}
+              (p : A `Or` B) : C p =>
+  \case Or-rec {A} {B} {\Sigma (p : Or A B) (C p)} (\lam a => (inl a, f a)) (\lam b => (inr b, g b)) p \with {
+    | (q, c) => rewrite (pathInProp p q) c
+  }
 
 -- 4. Докажите, что тип утверждений является множеством
 
-\func prop-isSet : isSet \Prop => {?}
+\func prop-isSet : isSet \Prop => \lam _ _ => pathInProp
 
 -- 5. Докажите, что функции Prop1-to-Prop2 и Prop2-to-Prop1 взаимно обратны и, как следствие, что Prop1 = Prop2
+
+\func Prop121'-A-eq-A {A : \Type} {isP : isProp A} : Prop2-to-Prop1' A isP = A =>
+  equivalence=>equality (\new QEquiv {
+    | f => data2a
+    | ret => \lam b => inc b
+    | ret_f => \lam x => cases x \with {
+      | inc a => pmap inc (data2a-eq a)
+    }
+    | f_sec => \lam y => data2a-eq y
+  })
+
+  \where {
+    \sfunc data2a {A : \Type} {isP : isProp A} (p : Prop2-to-Prop1' A isP) : A \elim p
+      | inc a => a
+
+    \func data2a-eq {A : \Type} {isP : isProp A} (a : A) : data2a (inc {A} {isP} a) = a =>
+      \peval data2a (inc a)
+  }
+
+\func Prop122-mv (P : Prop2) : Prop1-to-Prop2 (Prop2-to-Prop1 P) = P =>
+  unfold (Prop1-to-Prop2, Prop2-to-Prop1) $ cases P \with {
+  (A, isP) => ext (Prop121'-A-eq-A, all-isProp-eq)
+  }
+
+  \where {
+    \func all-isProp-eq {A : \Type} {p q : isProp A} : p = q =>
+      ext $ \lam x y =>
+                \case p x y \as pxy, idp : p x y = pxy, q x y \as qxy, idp : q x y = qxy \with {
+                  | pxy, peq, qxy, qeq => rewrite (peq, qeq) $ prop2-isSet p x y pxy qxy
+                }
+
+    \func prop2-isSet {A : \Type} (isP : isProp A) : isSet A =>
+      setLem (\lam _ _ => A) (\lam _ _ x y => isP x y) id (\lam {a} {a'} _ => isP a a')
+  }
+
+\func Prop221-mv (P : Prop1) : Prop2-to-Prop1 (Prop1-to-Prop2 P) = P =>
+  unfold (Prop2-to-Prop1, Prop1-to-Prop2) $ Prop121'-A-eq-A
+
+\func Prop1=Prop2 : Prop1 = Prop2 => equivalence=>equality (\new QEquiv {
+  | f => Prop1-to-Prop2
+  | ret => Prop2-to-Prop1
+  | ret_f => Prop221-mv
+  | f_sec => Prop122-mv
+})
 
 -- Можно сделать только одно из упражнений 6a, 6b на выбор
 -- 6a. Тип С называется когенератором, если для любых множеств A и B и любых функций f, g : A -> B верно,
@@ -30,7 +96,9 @@
 
 \func isCogenerator (C : \Type) => \Pi {A B : \Set} (f g : A -> B) (p : \Pi (h : B -> C) -> h o f = h o g) -> f = g
 
-\func PropIsCogenerator : isCogenerator \Prop => {?}
+\func PropIsCogenerator : isCogenerator \Prop => \lam f g p =>
+    ext (\lam a => \let eq : (f a = f a) = (f a = g a) => pmap (\lam h => h a) (p (\lam b => f a = b)) \in
+      transport (\lam x => x) eq idp)
 
 -- 6b. Тип X называется инъективным, если для любой функции f : A -> X и любой инъекции i : A -> B
 --     существует функция l : B -> X такая, что l o i = f
@@ -46,6 +114,41 @@
 -- Можно сделать только одно из упражнений 7a, 7b на выбор
 -- 7a. Докажите, что (Bool = Bool) = Bool
 
-\func BoolAut : (Bool = Bool) = Bool => {?}
+\func BoolAut : (Bool = Bool) = Bool => transport (\lam X => X = Bool) (sym (QEquiv-to-= univalence))
+  $ QEquiv-to-= \new QEquiv {
+  | f e => e false
+  | ret => \case __ \with {
+    | false => \new QEquiv {
+      | f => \lam b => b
+      | ret => \lam b => b
+      | ret_f => \lam b => idp
+      | f_sec => \lam b => idp
+    }
+    | true => \new QEquiv {
+      | f => not
+      | ret => not
+      | ret_f => not-not
+      | f_sec => not-not
+    }
+  }
+  | ret_f e => Equiv.equals $ ext \case \elim __ \with {
+    | true => cases (e false arg addPath, e true arg addPath) \with {
+      | false, p, false, q => inv (Equiv.ret_f {e} true) *> pmap Equiv.ret (q *> inv p) *> Equiv.ret_f false
+      | true, p, true, q => inv (Equiv.ret_f {e} false) *> pmap Equiv.ret (p *> inv q) *> Equiv.ret_f true
+      | false, p, true, q => idp
+      | true, p, false, q => idp
+    }
+    | false => cases (e false arg addPath, e true arg addPath) \with {
+      | false, p, false, q => idp
+      | true, p, true, q => idp
+      | false, p, true, q => idp
+      | true, p, false, q => idp
+    }
+  }
+  | f_sec b => \case \elim b \with {
+    | true => idp
+    | false => idp
+  }
+}
 
 -- 7b. Докажите, что (n+m)-элементное множество равно размеченному объединению n- и m-элементных множеств
