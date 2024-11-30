@@ -1,0 +1,280 @@
+\import Data.Array
+\import Data.Bool
+\import Data.Maybe
+\import Equiv
+\import Equiv.Univalence
+\import Function
+\import Function.Meta
+\import Logic
+\import Logic.Meta
+\import Meta
+\import Paths
+\import Paths.Meta
+\import Relation.Equivalence
+\import Set
+
+
+-- 1. Тип данных Set
+
+-- У нас есть два варианта, как описать спецификацию для структуры данных:
+
+\func Spec1 (S : \Set -> \Set) : \Prop => \Pi (A : \Set) -> Spec2 A (S A)
+
+\func Spec2 (A : \Set) (S : \Set) : \Prop => {?}
+
+-- Второй лучше, потому что он более общий
+-- Кроме того, если первый вариант обязывает S быть определённым для произвольного множества A,
+-- то второй может использоваться как спецификация для специализированных структур данных
+-- (например, множество над Bool как битовая маска)
+
+-- Мы можем строить спецификацию для Set в предположении, что A обладает разрешимым равенством,
+-- но можно это сделать и без разрешимого равенства, что будет более общо, поэтому мы так и сделаем
+
+-- Спецификация типа данных Set
+\class SetSpec {A : \Set} (S : \Set)
+  | isElem : A -> S -> \Prop
+  | setExt {s1 s2 : S} : (\Pi (a : A) -> a `isElem` s1 <-> a `isElem` s2) -> s1 = s2
+  | empty : S
+  | emptyProp {a : A} : Not (a `isElem` empty)
+  | add : A -> S -> S
+  | addHead {a : A} {s : S} : a `isElem` add a s
+  | addTail {a a' : A} {s : S} : a `isElem` s -> a `isElem` add a' s
+  | addProp {a a' : A} {s : S} : a `isElem` add a' s -> (a = a') || a `isElem` s
+
+-- Предикат "элемент x принадлежит xs"
+\func In {A : \Type} (x : A) (xs : Array A) => TruncP (Index x xs)
+
+-- Определим отношение эквивалентности на массивах
+-- Два массива эквивалентны, если они содержат одни и те же элементы
+\func EqArray {A : \Set} (xs ys : Array A) : \Prop => \Pi (a : A) -> In a xs <-> In a ys
+
+-- Простая реализация SetSpec
+\func ArraySet (A : \Set) : \Set => Quotient {Array A} EqArray
+
+-- Мы хотим доказать, что наша спецификация полна, то есть,
+-- что ArraySet -- это единственная реализация, удовлетворяющая ей
+-- Для этого достаточно построить биекцию между произвольной реализацией S и ArraySet
+
+-- Любому массиву можно сопоставить множество
+\func arrayToSet {S : SetSpec} (xs : Array S.A) : S \elim xs
+  | nil => empty
+  | x :: xs => add x $ arrayToSet xs
+
+-- arrayToSet уважает отношение эквивалентности, а значит у нас есть функция из ArraySet в S
+\func arraySetToSet {S : SetSpec} (xs : ArraySet S.A) : S \elim xs
+  | in~ xs => arrayToSet xs
+  | ~-equiv xs ys r => setExt \lam a =>
+    ( \lam p => In-isElem $ (r a).1 $ isElem-In p
+    , \lam p => In-isElem $ (r a).2 $ isElem-In p
+    )
+
+-- In x xs -> isElem x (arrayToSet xs)
+\lemma In-isElem {S : SetSpec} {xs : Array S.A} {a : S.A} (p : In a xs) : isElem a (arrayToSet xs) \elim xs, p
+  | nil, inP ((), _)
+  | x :: xs, inP (0, idp) => addHead
+  | x :: xs, inP (suc i, p) => addTail $ In-isElem $ inP (i, p)
+
+-- In x xs <- isElem x (arrayToSet xs)
+\lemma isElem-In {S : SetSpec} {xs : Array S.A} {a : S.A} (p : isElem a (arrayToSet xs)) : In a xs \elim xs
+  | nil => \case emptyProp p
+  | x :: xs => \case addProp p \with {
+    | byLeft p => inP (0, inv p)
+    | byRight p => \case isElem-In p \with {
+      | inP (i, q) => inP (suc i, q)
+    }
+  }
+
+-- Чтобы доказать, что arraySetToSet является биекцией, достаточно показать, что она инъекция и сюръекция
+-- Инъективность легко доказывается:
+\lemma arraySetToSet-inj {S : SetSpec} : isInj (arraySetToSet {S})
+  => \lam {xs} {ys} p => \case \elim xs, \elim ys, \elim p \with {
+    | in~ xs, in~ ys, p => path $ ~-equiv xs ys $ later \lam _ =>
+      ( \lam q => isElem-In $ rewriteI p $ In-isElem q
+      , \lam q => isElem-In $ rewrite p $ In-isElem q
+      )
+  }
+
+-- Теперь, когда мы уже почти всё доказали, посмотрим, что у нас получилось...
+-- setExt эквивалентен утверждению, что функция \lam x y => isElem y x : S -> (A -> \Prop) является инъективной
+-- То есть isElem вместе с setExt говорят, что S является подмножеством A -> \Prop, то есть состоит из подмножеств A:
+
+\class SetSpec' {A : \Set} (S : \Set)
+  | isElem' : S -> A -> \Prop
+  | setExt' : isInj isElem'
+  --        ≈ \Pi (s1 s2 : S) -> isElem' s1 = isElem' s2 -> s1 = s2
+  --        ≈ \Pi (s1 s2 : S) -> (\Pi (a : A) -> isElem' s1 a = isElem' s2 a) -> s1 = s2
+  --        ≈ \Pi (s1 s2 : S) -> (\Pi (a : A) -> isElem' s1 a <-> isElem' s2 a) -> s1 = s2
+
+-- empty вместе с emptyProp говорит, что пустое подмножество принадлежит S
+-- Вместе с add, addHead, addTail и addProp это влечет, что все конечные подмножества принадлежат S
+
+-- Чтобы доказать сюръективность, нужно добавить условие, что в S лежат только конечные подмножества A
+\class FinSetSpec \extends SetSpec
+  | set-fin (s : S) : ∃ (xs : Array A) (\Pi (a : A) -> In a xs <-> a `isElem` s)
+
+-- Теперь можно доказать сюръективность
+\lemma arraySetToSet-surj {S : FinSetSpec} : isSurj (arraySetToSet {S})
+  => \lam s => \case set-fin s \with {
+    | inP (xs, p) => inP (in~ xs, setExt \lam a =>
+      ( \lam q => (p a).1 $ isElem-In q
+      , \lam q => In-isElem $ (p a).2 q
+      ))
+  }
+
+-- Наша спецификация полна, то есть ArraySet -- это единственная ее реализация
+\func arraySet=Set {S : FinSetSpec} : ArraySet S.A = S
+  => Equiv-to-= $ Equiv.fromInjSurj arraySetToSet arraySetToSet-inj arraySetToSet-surj
+
+-- Наша спецификация корректна, то есть ArraySet ей удовлетворяет
+\instance ArraySetSet {A : \Set} : FinSetSpec {A} (ArraySet A)
+  | isElem (a : A) (xs : ArraySet A) : \Prop \elim xs {
+    | in~ xs => In a xs
+    | ~-equiv xs ys r => ext $ r a
+  }
+  | setExt {xs ys : ArraySet A} (p : \Pi (a : A) -> a `isElem` xs <-> a `isElem` ys) : xs = ys \elim xs, ys {
+    | in~ xs, in~ ys => path $ ~-equiv xs ys p
+  }
+  | empty => in~ nil
+  | emptyProp p => \case p \with {
+    | inP ((), p)
+  }
+  | add (a : A) (xs : ArraySet A) : ArraySet A \elim xs {
+    | in~ xs => in~ $ a :: xs
+    | ~-equiv xs ys r => path $ ~-equiv (a :: xs) (a :: ys) $ later \lam a' =>
+      ( \case __ \with {
+        | inP (0, p) => inP (0, p)
+        | inP (suc i, p) => \case (r a').1 $ inP (i, p) \with {
+          | inP (j, q) => inP (suc j, q)
+        }
+      }
+      , \case __ \with {
+        | inP (0, p) => inP (0, p)
+        | inP (suc i, p) => \case (r a').2 $ inP (i, p) \with {
+          | inP (j, q) => inP (suc j, q)
+        }
+      }
+      )
+  }
+  | addHead {a : A} {xs : ArraySet A} : a `isElem` add a xs \elim xs {
+    | in~ xs => inP (0, idp)
+  }
+  | addTail {a a' : A} {xs : ArraySet A} (p : a `isElem` xs) : a `isElem` add a' xs \elim xs, p {
+    | in~ xs, inP (i, p) => inP (suc i, p)
+  }
+  | addProp {a a' : A} {xs : ArraySet A} (p : a `isElem` add a' xs) : (a = a') || a `isElem` xs \elim xs, p {
+    | in~ xs, inP (0, idp) => byLeft idp
+    | in~ xs, inP (suc i, p) => byRight $ inP (i, p)
+  }
+  | set-fin (xs : ArraySet A) : ∃ (ys : Array A) (\Pi (a : A) -> In a ys <-> a `isElem` xs) \elim xs {
+    | in~ xs => inP (xs, \lam _ => (id, id))
+  }
+
+-- Мы не предполагали, что равенство на A разрешимо
+-- Поэтому не все функции возможно реализовать для множеств, удовлетворяющих нашей спецификации
+-- (так как она корректна и полна, можно реализовать в точности те функции, которые реализуемы для ArraySet)
+-- Например, мы не можем реализовать функцию size : S -> Nat,
+-- так как размер множества add a (add a' empty) зависит от того равны ли a и a' или нет
+
+-- Но если равенство на A разрешимо, то мы можем реализовать все привычные функции
+\func size {S : FinSetSpec} (d : DecSet S.A) (s : S) : Nat => {?}
+
+\func remove {S : FinSetSpec} (d : DecSet S.A) (a : S.A) (s : S) : S => {?}
+
+-- Можно определить другие реализации FinSetSpec
+-- Например, если равенство на A разрешимо, то можно брать только списки без повторяющихся элементов
+-- \func NubArraySet (D : DecSet) => {?}
+--   \Sigma (xs : Array A) плюс условие, что все элементы в xs различны, и факторизация по перестановкам
+
+-- 2. Тип данных Map
+
+-- Без разрешимости равенства довольно сложно определить более-менее интересную спецификацию для Map,
+-- поэтому предположим разрешимость равенства
+-- В общих чертах идея построения та же: определяем правило экстенсиональности для Map (get + mapExt)
+-- и наполняем его всеми конечными представителями (emptyMap + put + законы)
+\class MapSpec (K : DecSet) {V : \Set} (\classifying M : \Set)
+  | get : K -> M -> Maybe V
+  | mapExt {m m' : M} : (\Pi (k : K) -> get k m = get k m') -> m = m'
+  | emptyMap : M
+  | emptyMapProp (k : K) : get k emptyMap = nothing
+  | put : K -> V -> M -> M
+  | putHead (k : K) (v : V) (m : M) : get k (put k v m) = just v
+  | putTail (k k' : K) (v : V) (m : M) (p : k /= k') : get k (put k' v m) = get k m
+
+-- Мы можем построить ассоциативный список на массиве
+\func getArray {K : DecSet} {V : \Set} (k : K) (xs : Array (\Sigma K V)) : Maybe V \elim xs
+  | nil => nothing
+  | (k', v) :: xs => \case k == k' \with {
+    | true => just v
+    | false => getArray k xs
+  }
+
+-- И определить на его основе каноническую реализацию Map
+\func ArrayMap (K : DecSet) (V : \Set) => Quotient {Array (\Sigma K V)}
+  (\lam xs ys => \Pi (k : K) -> getArray k xs = getArray k ys)
+
+-- Построить произвольный Map из ассоциативного списка
+\func arrayToMap {K : DecSet} {M : MapSpec K} (xs : Array (\Sigma K M.V)) : M \elim xs
+  | nil => emptyMap
+  | (k, v) :: xs => put k v $ arrayToMap xs
+
+-- Значит и из канонического Map
+\func arrayMapToMap {K : DecSet} {M : MapSpec K} (xs : ArrayMap K M.V) : M \elim xs
+  | in~ xs => arrayToMap xs
+  | ~-equiv xs ys r => mapExt \lam k => get-arrayToMap k xs *> r k *> inv (get-arrayToMap k ys)
+
+-- arrayToMap уважает эквивалентность
+\lemma get-arrayToMap {K : DecSet} {M : MapSpec K} (k : K) (xs : Array (\Sigma K M.V))
+  : get k (arrayToMap xs) = getArray k xs \elim xs
+  | nil => emptyMapProp k
+  | (k', v) :: xs =>
+    \case decideEq k k' \as cond
+    \return M.get k (M.put k' v (arrayToMap xs)) = (\case decToBool cond \with {
+      | true => just v
+      | false => getArray k xs
+    }) \with {
+      | yes e => rewrite e $ putHead _ _ _
+      | no n => putTail _ _ _ _ n *> get-arrayToMap k xs
+    }
+
+-- arrayMapToMap инъективен
+\lemma arrayMapToMap-inj {K : DecSet} {M : MapSpec K} : isInj {ArrayMap K M.V} (arrayMapToMap {K} {M}) =>
+  \lam {xs} {ys} p => \case \elim xs, \elim ys, \elim p \with {
+    | in~ xs, in~ ys, p => path $ ~-equiv xs ys \lam k =>
+      inv (get-arrayToMap k xs) *> pmap (get k) p *> get-arrayToMap k ys
+  }
+
+-- и так далее...
+
+\func MapSpec=ArrayMap {K : DecSet} {M : MapSpec K} : ArrayMap K M.V = M
+  => Equiv-to-= $ Equiv.fromInjSurj (arrayMapToMap {K} {M}) arrayMapToMap-inj {?}
+
+\instance ArrayMapMap {K : DecSet} {V : \Set} : MapSpec K {V} (ArrayMap K V)
+  | get (k : K) (xs : ArrayMap K V) : Maybe V \elim xs {
+    | in~ xs => getArray k xs
+    | ~-equiv xs ys r => r k
+  }
+  | mapExt {xs ys : ArrayMap K V} (p : \Pi (k : K) -> get k xs = get k ys) : xs = ys \elim xs, ys {
+    | in~ xs, in~ ys => path $ ~-equiv xs ys p
+  }
+  | emptyMap => in~ nil
+  | emptyMapProp _ => idp
+  | put (k : K) (v : V) (xs : ArrayMap K V) : ArrayMap K V \elim xs {
+    | in~ xs => in~ $ (k, v) :: xs
+    | ~-equiv xs ys r => path $ ~-equiv ((k, v) :: xs) ((k, v) :: ys) $ \lam k' =>
+      \case k' == k \as cond \return (\case cond \with {
+        | true => just v
+        | false => getArray k' (\new xs {})
+      }) = (\case cond \with {
+        | true => just v
+        | false => getArray k' (\new ys {})
+      }) \with {
+      | true => idp
+      | false => r k'
+    }
+  }
+  | putHead (k : K) (v : V) (xs : ArrayMap K V) : get k (put k v xs) = just v \elim xs {
+    | in~ xs => unfold (==) $ rewrite (decideEq=_reduce {_} {k} idp) idp
+  }
+  | putTail (k k' : K) (v : V) (xs : ArrayMap K V) (p : k /= k') : get k (put k' v xs) = get k xs \elim xs {
+    | in~ xs => unfold (==) $ rewrite (decideEq/=_reduce p) idp
+  }
