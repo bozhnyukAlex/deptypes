@@ -33,7 +33,7 @@
 --    b) Определите функцию size из лекции
 --    c) Докажите, что size-le эквивалентно определению через size, если A -- разрешимо и S -- конечно
 
-\func size-le (S : SetSpec) (n : Nat) : \Prop => {?}
+\func size-le {S : SetSpec} (s : S) (n : Nat) : \Prop => {?}
 
 \func size {S : FinSetSpec} (d : DecSet S.A) (s : S) : Nat => {?}
 
