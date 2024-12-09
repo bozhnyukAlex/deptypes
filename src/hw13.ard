@@ -9,7 +9,7 @@
 -- 1. Докажите, что add x (add x s) = add x s и add x (add y s) = add y (add x s)
 
 \func add-idemp {S : SetSpec} (x : S.A) (s : S) : add x (add x s) = add x s => setExt (\lam _ => (
-  \lam is-elem => \let hmm => addProp is-elem \in \case hmm \with {
+  \lam is-elem => \case addProp is-elem \with {
     | byLeft a1 => rewrite a1 addHead
     | byRight b => b
   },
