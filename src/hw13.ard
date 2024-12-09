@@ -20,9 +20,9 @@
   setExt (\lam a => (add-swap-lemma a x y s, add-swap-lemma a y x s))
   \where {
     \func add-swap-lemma {S : SetSpec} (a : S.A) (x y : S.A) (s : S.S) : S.isElem a (S.add x (S.add y s)) -> S.isElem a (S.add y (S.add x s)) =>
-      \lam in-straight => \let reason => addProp in-straight \in \case reason \with {
+      \lam in-straight => \case addProp in-straight \with {
         | byLeft a=x => addTail {S} {_} {_} {_} $ rewrite a=x addHead
-        | byRight in-tail => \let reason' => addProp in-tail \in \case reason' \with {
+        | byRight in-tail => \case addProp in-tail \with {
           | byLeft a=y => rewrite a=y addHead
           | byRight in-tail' => addTail $ addTail in-tail'
         }
