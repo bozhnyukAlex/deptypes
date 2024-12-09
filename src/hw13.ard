@@ -1,17 +1,45 @@
 \import Data.Bool
 \import Function
+\import Function.Meta
+\import Logic
+\import Logic.Meta
+\import Paths.Meta
 \import Set
 \import lect13
-
 -- 1. Докажите, что add x (add x s) = add x s и add x (add y s) = add y (add x s)
 
-\func add-idemp {S : SetSpec} (x : S.A) (s : S) : add x (add x s) = add x s => {?}
+\func add-idemp {S : SetSpec} (x : S.A) (s : S) : add x (add x s) = add x s => setExt (\lam _ => (
+  \lam is-elem => \let hmm => addProp is-elem \in \case hmm \with {
+    | byLeft a1 => rewrite a1 addHead
+    | byRight b => b
+  },
+  addTail
+))
 
-\func add-swap {S : SetSpec} (x y : S.A) (s : S) : add x (add y s) = add y (add x s) => {?}
-
+\func add-swap {S : SetSpec} (x y : S.A) (s : S) : add x (add y s) = add y (add x s) =>
+  setExt (\lam a => (add-swap-lemma a x y s, add-swap-lemma a y x s))
+  \where {
+    \func add-swap-lemma {S : SetSpec} (a : S.A) (x y : S.A) (s : S.S) : S.isElem a (S.add x (S.add y s)) -> S.isElem a (S.add y (S.add x s)) =>
+      \lam in-straight => \let reason => addProp in-straight \in \case reason \with {
+        | byLeft a=x => addTail {S} {_} {_} {_} $ rewrite a=x addHead
+        | byRight in-tail => \let reason' => addProp in-tail \in \case reason' \with {
+          | byLeft a=y => rewrite a=y addHead
+          | byRight in-tail' => addTail $ addTail in-tail'
+        }
+      }
+  }
 -- 2. Докажите, что множество подмножеств является инстансом SetSpec
 
-\instance subsets {A : \Set} : SetSpec {A} (A -> \Prop) => {?}
+\func subsets {A : \Set} : SetSpec {A} (A -> \Prop) => \new SetSpec {
+  | empty => \lam _ => Empty
+  | add x s => \lam a => (a = x) || s a
+  | isElem a s => s a
+  | setExt p => ext (\lam a => ext $ p a)
+  | addHead => byLeft idp
+  | addTail p => byRight p
+  | addProp in-all => in-all
+  | emptyProp => contradiction
+}
 
 -- 3. Докажите, что множество подмножеств является наибольшим инстансом, то есть любой другой вкладывается в него
 
